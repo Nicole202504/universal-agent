@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "universal-agent",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-05-21",
+  // @cloudflare/think 需要 experimental flag
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 前端构建产物（SPA）。Worker 处理 /api 与 /agents，其余路径 fallthrough 到 ASSETS。
+  "assets": {
+    "directory": "./ui/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+
+  // Durable Object：binding 名 = class 名（Agents SDK 路由约定）；per-name 多实例由 agent_config 区分业务
+  "durable_objects": {
+    "bindings": [{ "name": "UniversalAgent", "class_name": "UniversalAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UniversalAgent"] }],
+
+  // 刚性轨：不能漏的多步长流程
+  "workflows": [
+    {
+      "name": "universal-agent-hello",
+      "binding": "HELLO_WORKFLOW",
+      "class_name": "HelloWorkflow"
+    }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "universal-agent-db",
+      "database_id": "908ef566-4354-448b-94e6-2decda86dcda",
+      "migrations_dir": "migrations"
+    }
+  ]
+
+  // P0 无 cron；P1 从 agent_config.schedules 装配定时任务后再加 "triggers": { "crons": [...] }
+}

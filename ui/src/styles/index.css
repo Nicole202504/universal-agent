@@ -1,0 +1,18 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* app-cuecue 主题 + SpringBrand 公共设计体系兼容层 */
+@import './theme.css';
+@import '@springbrand/styles/relume-compat.css';
+@import '@springbrand/styles/shadcn.css';
+@import '@springbrand/styles/base.css';
+@import '@springbrand/styles/utilities.css';
+
+@plugin '@tailwindcss/typography';
+@custom-variant dark (&:is(.dark *));
+@layer theme, base, components, utilities;
+
+/* 显式生成会用到的语义色 utilities */
+@source inline(
+  '{text,bg,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,destructive,destructive-foreground,border,input,ring}'
+);

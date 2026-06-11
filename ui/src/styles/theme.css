@@ -1,0 +1,405 @@
+:root {
+  /* app-cuecue 主题：cuecue cream + sage palette（参考 cuecue-app/globals.css）。 */
+  --background: #fafaf7;
+  --foreground: #1b1b1a;
+  --card: #ffffff;
+  --card-foreground: #1b1b1a;
+  --popover: #ffffff;
+  --popover-foreground: #1b1b1a;
+  --primary: #5c7f65;
+  --primary-foreground: #ffffff;
+  --secondary: #e6eee8;
+  --secondary-foreground: #1b1b1a;
+  --muted: #f3f2ec;
+  --muted-foreground: #6b6a66;
+  --accent: #5c7f65;
+  --accent-foreground: #ffffff;
+  /* Destructive/Error - 红色 #D82A38 */
+  --destructive: oklch(0.574 0.207 23.267);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: #eae8e0;
+  --input: #eae8e0;
+  --ring: #5c7f65;
+  --chart-1: #5c7f65;
+  --chart-2: #c2783c;
+  --chart-3: #3f5c46;
+  --chart-4: #d9b85f;
+  --chart-5: #8f9189;
+  --radius: 8px;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1b1b1a;
+  --sidebar-primary: #5c7f65;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6eee8;
+  --sidebar-accent-foreground: #1b1b1a;
+  --sidebar-border: #eae8e0;
+  --sidebar-ring: #5c7f65;
+
+  /* 主色颜色色阶 (sage) */
+  --color-primary-50: #f1f5f2;
+  --color-primary-100: #e6eee8;
+  --color-primary-200: #c9dbcd;
+  --color-primary-300: #a5c0ac;
+  --color-primary-400: #7fa28a;
+  --color-primary-500: #5c7f65;
+  --color-primary-600: #4f6e58;
+  --color-primary-700: #3f5c46;
+  --color-primary-800: #314638;
+  --color-primary-900: #25342b;
+  --color-primary-950: #14201a;
+
+  /* Neutral 中性色色阶 (cuecue cream) */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #fafaf7;
+  --color-neutral-100: #f3f2ec;
+  --color-neutral-200: #eae8e0;
+  --color-neutral-300: #dedbd1;
+  --color-neutral-400: #9e9c95;
+  --color-neutral-500: #6b6a66;
+  --color-neutral-600: #4f4d49;
+  --color-neutral-700: #3a3936;
+  --color-neutral-800: #2a2a2c;
+  --color-neutral-900: #1b1b1a;
+  --color-neutral-950: #0a0a0a;
+}
+
+.dark {
+  --background: #1b1b1a;
+  --foreground: #fafaf7;
+  --card: #2a2a2c;
+  --card-foreground: #fafaf7;
+  --popover: #2a2a2c;
+  --popover-foreground: #fafaf7;
+  --primary: #7fa28a;
+  --primary-foreground: #1b1b1a;
+  --secondary: #2f3d34;
+  --secondary-foreground: #fafaf7;
+  --muted: #2a2a2c;
+  --muted-foreground: #9e9c95;
+  --accent: #7fa28a;
+  --accent-foreground: #1b1b1a;
+  /* Destructive/Error - 红色 #E93544 (暗色模式用更亮的 500) */
+  --destructive: oklch(0.614 0.214 22.342);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: color-mix(in oklch, #eae8e0 22%, transparent);
+  --input: color-mix(in oklch, #eae8e0 28%, transparent);
+  --ring: #7fa28a;
+  --chart-1: #7fa28a;
+  --chart-2: #c2783c;
+  --chart-3: #a5c0ac;
+  --chart-4: #d9b85f;
+  --chart-5: #8f9189;
+  --sidebar: #1b1b1a;
+  --sidebar-foreground: #fafaf7;
+  --sidebar-primary: #7fa28a;
+  --sidebar-primary-foreground: #1b1b1a;
+  --sidebar-accent: color-mix(in oklch, #5c7f65 18%, #2f3d34);
+  --sidebar-accent-foreground: #fafaf7;
+  --sidebar-border: color-mix(in oklch, #eae8e0 22%, transparent);
+  --sidebar-ring: #7fa28a;
+
+  /* 主色颜色色阶 (sage) */
+  --color-primary-50: #f1f5f2;
+  --color-primary-100: #e6eee8;
+  --color-primary-200: #c9dbcd;
+  --color-primary-300: #a5c0ac;
+  --color-primary-400: #7fa28a;
+  --color-primary-500: #5c7f65;
+  --color-primary-600: #4f6e58;
+  --color-primary-700: #3f5c46;
+  --color-primary-800: #314638;
+  --color-primary-900: #25342b;
+  --color-primary-950: #14201a;
+
+  /* Neutral 中性色色阶 (cuecue cream) */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #fafaf7;
+  --color-neutral-100: #f3f2ec;
+  --color-neutral-200: #eae8e0;
+  --color-neutral-300: #dedbd1;
+  --color-neutral-400: #9e9c95;
+  --color-neutral-500: #6b6a66;
+  --color-neutral-600: #4f4d49;
+  --color-neutral-700: #3a3936;
+  --color-neutral-800: #2a2a2c;
+  --color-neutral-900: #1b1b1a;
+  --color-neutral-950: #0a0a0a;
+}
+
+:root {
+  /* ========= 语义色基础 (基于 Figma 设计) ========= */
+  /* Success - 绿色 #1DAF61 */
+  --success: oklch(0.664 0.163 153.128);
+  --success-foreground: oklch(0.985 0 0);
+  /* Warning - 黄色 #E6A819 */
+  --warning: oklch(0.77 0.154 80.945);
+  --warning-foreground: oklch(0.145 0 0);
+  /* Info - 跟随当前 app-cuecue 主色。 */
+  --info: var(--primary);
+  --info-foreground: oklch(0.985 0 0);
+}
+
+.dark {
+  /* ========= 语义色基础 (基于 Figma 设计) ========= */
+  /* Success - 绿色 #27C06E (暗色模式用更亮的 500) */
+  --success: oklch(0.713 0.171 153.607);
+  --success-foreground: oklch(0.145 0 0);
+  /* Warning - 黄色 #EAB625 (暗色模式用更亮的 400) */
+  --warning: oklch(0.79 0.165 85);
+  --warning-foreground: oklch(0.145 0 0);
+  /* Info - 跟随当前 app-cuecue 主色。 */
+  --info: var(--primary);
+  --info-foreground: oklch(0.985 0 0);
+
+  /* ========= Background / Link 暗色覆盖 ========= */
+  --background-tertiary: var(--color-neutral-600);
+  --link-secondary: var(--color-neutral-400);
+}
+
+:root,
+.dark {
+  /* ========= Primary 派生 ========= */
+  --primary-hover: color-mix(in oklch, var(--primary) 88%, var(--background));
+  --primary-active: color-mix(in oklch, var(--primary) 78%, var(--background));
+  --primary-border: color-mix(in oklch, var(--primary) 35%, var(--border));
+  --primary-soft-bg: color-mix(in oklch, var(--primary) 12%, var(--background));
+  --primary-bg: color-mix(in oklch, var(--primary) 10%, var(--background));
+  --primary-bg-hover: color-mix(
+    in oklch,
+    var(--primary) 18%,
+    var(--background)
+  );
+  --primary-border-hover: color-mix(
+    in oklch,
+    var(--primary) 50%,
+    var(--border)
+  );
+  --primary-text: var(--primary);
+  --primary-text-hover: var(--primary-hover);
+  --primary-text-active: var(--primary-active);
+
+  /* ========= Destructive / Error 派生 ========= */
+  --destructive-hover: color-mix(
+    in oklch,
+    var(--destructive) 88%,
+    var(--background)
+  );
+  --destructive-active: color-mix(
+    in oklch,
+    var(--destructive) 78%,
+    var(--background)
+  );
+  --destructive-border: color-mix(
+    in oklch,
+    var(--destructive) 35%,
+    var(--border)
+  );
+  --destructive-soft-bg: color-mix(
+    in oklch,
+    var(--destructive) 12%,
+    var(--background)
+  );
+  --error-bg: color-mix(in oklch, var(--destructive) 10%, var(--background));
+  --error-bg-hover: color-mix(
+    in oklch,
+    var(--destructive) 18%,
+    var(--background)
+  );
+  --error-border-hover: color-mix(
+    in oklch,
+    var(--destructive) 50%,
+    var(--border)
+  );
+  --error-text: var(--destructive);
+  --error-text-hover: var(--destructive-hover);
+  --error-text-active: var(--destructive-active);
+
+  /* ========= Success 派生 ========= */
+  --success-hover: color-mix(in oklch, var(--success) 88%, var(--background));
+  --success-active: color-mix(in oklch, var(--success) 78%, var(--background));
+  --success-border: color-mix(in oklch, var(--success) 35%, var(--border));
+  --success-bg: color-mix(in oklch, var(--success) 10%, var(--background));
+  --success-bg-hover: color-mix(
+    in oklch,
+    var(--success) 18%,
+    var(--background)
+  );
+  --success-border-hover: color-mix(
+    in oklch,
+    var(--success) 50%,
+    var(--border)
+  );
+  --success-text: var(--success);
+  --success-text-hover: var(--success-hover);
+  --success-text-active: var(--success-active);
+
+  /* ========= Warning 派生 ========= */
+  --warning-hover: color-mix(in oklch, var(--warning) 88%, var(--background));
+  --warning-active: color-mix(in oklch, var(--warning) 78%, var(--background));
+  --warning-border: color-mix(in oklch, var(--warning) 35%, var(--border));
+  --warning-bg: color-mix(in oklch, var(--warning) 10%, var(--background));
+  --warning-bg-hover: color-mix(
+    in oklch,
+    var(--warning) 18%,
+    var(--background)
+  );
+  --warning-border-hover: color-mix(
+    in oklch,
+    var(--warning) 50%,
+    var(--border)
+  );
+  --warning-text: var(--warning);
+  --warning-text-hover: var(--warning-hover);
+  --warning-text-active: var(--warning-active);
+
+  /* ========= Info 派生 ========= */
+  --info-hover: color-mix(in oklch, var(--info) 88%, var(--background));
+  --info-active: color-mix(in oklch, var(--info) 78%, var(--background));
+  --info-border: color-mix(in oklch, var(--info) 35%, var(--border));
+  --info-bg: color-mix(in oklch, var(--info) 10%, var(--background));
+  --info-bg-hover: color-mix(in oklch, var(--info) 18%, var(--background));
+  --info-border-hover: color-mix(in oklch, var(--info) 50%, var(--border));
+  --info-text: var(--info);
+  --info-text-hover: var(--info-hover);
+  --info-text-active: var(--info-active);
+
+  /* ========= Muted / Accent 派生 ========= */
+  --muted-hover: color-mix(in oklch, var(--muted) 85%, var(--background));
+  --accent-hover: color-mix(in oklch, var(--accent) 85%, var(--background));
+
+  /* ========= Ring 派生（focus/outline） ========= */
+  --ring-20: color-mix(in oklch, var(--ring) 20%, transparent);
+  --ring-30: color-mix(in oklch, var(--ring) 30%, transparent);
+
+  /* ========= Border 强化 ========= */
+  --border-strong: color-mix(in oklch, var(--border) 75%, var(--foreground));
+  --border-secondary: color-mix(in oklch, var(--border) 60%, transparent);
+
+  /* ========= Disabled ========= */
+  --disabled-bg: color-mix(in oklch, var(--muted) 70%, var(--background));
+  --disabled-text: color-mix(
+    in oklch,
+    var(--muted-foreground) 80%,
+    var(--foreground)
+  );
+
+  /* ========= Background 层级 ========= */
+  --background-tertiary: var(--color-neutral-500);
+  --bg-spotlight: color-mix(in oklch, var(--foreground) 6%, var(--background));
+  --bg-mask: color-mix(in oklch, var(--foreground) 45%, transparent);
+
+  /* ========= Link 语义色 ========= */
+  --link-primary: var(--foreground);
+  --link-secondary: var(--color-neutral-500);
+  --link-alternative: var(--background);
+  /* 次级 CTA / inline 链接色：跟 sage 主色色相错开，参考 Manus 双层 action hierarchy。 */
+  --link-action: #2563eb;
+  --link-action-hover: #1d4ed8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-50: var(--color-primary-50);
+  --color-primary-100: var(--color-primary-100);
+  --color-primary-200: var(--color-primary-200);
+  --color-primary-300: var(--color-primary-300);
+  --color-primary-400: var(--color-primary-400);
+  --color-primary-500: var(--color-primary-500);
+  --color-primary-600: var(--color-primary-600);
+  --color-primary-700: var(--color-primary-700);
+  --color-primary-800: var(--color-primary-800);
+  --color-primary-900: var(--color-primary-900);
+  --color-primary-950: var(--color-primary-950);
+  --color-neutral-0: var(--color-neutral-0);
+  --color-neutral-50: var(--color-neutral-50);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-300: var(--color-neutral-300);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-500: var(--color-neutral-500);
+  --color-neutral-600: var(--color-neutral-600);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-800: var(--color-neutral-800);
+  --color-neutral-900: var(--color-neutral-900);
+  --color-neutral-950: var(--color-neutral-950);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans, 'Inter', ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  --font-serif: var(--font-serif, ui-serif, Georgia, serif);
+  --font-inter: 'Inter', 'sans-serif';
+  --font-manrope: 'Manrope', 'sans-serif';
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg:
+    0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl:
+    0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+}
+
+.ai-website-builder ::selection {
+  background: color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
+.ai-website-builder-scrollbar {
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent)
+    transparent;
+}
+
+.ai-website-builder-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ai-website-builder-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+  border-radius: 999px;
+}
+
+.ai-website-card-scrollbar {
+  scrollbar-width: none;
+}
+
+.ai-website-card-scrollbar::-webkit-scrollbar {
+  display: none;
+}
