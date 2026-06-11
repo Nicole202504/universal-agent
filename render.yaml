@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: universal-agent
+    runtime: docker
+    dockerfilePath: python-api/Dockerfile
+    plan: free
