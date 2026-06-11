@@ -17,3 +17,26 @@ apiRoutes.get("/runs", async (c) => {
   ).all();
   return c.json(results);
 });
+
+// ── 聊天记录 ──
+
+// 保存消息
+apiRoutes.post("/chat", async (c) => {
+  const { session_id, role, content } = await c.req.json<{
+    session_id?: string; role: string; content: string;
+  }>();
+  const sid = session_id || "default";
+  await c.env.DB.prepare(
+    "INSERT INTO chat_messages (session_id, role, content) VALUES (?1, ?2, ?3)",
+  ).bind(sid, role, content).run();
+  return c.json({ ok: true });
+});
+
+// 加载历史（最近 100 条）
+apiRoutes.get("/chat", async (c) => {
+  const sid = c.req.query("session") || "default";
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, role, content, created_at FROM chat_messages WHERE session_id = ?1 ORDER BY id ASC LIMIT 100",
+  ).bind(sid).all();
+  return c.json(results);
+});
