@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, FileText, Loader2, MapPin, Search, Sparkles, X } from "lucide-react";
+import { ArrowUp, Check, FileText, Loader2, MapPin, Search, Sparkles, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +26,7 @@ type BirthForm = {
   latitude: number | "";
   longitude: number | "";
   timezone: string;
+  gender: string;
 };
 
 type ValidationResponse = {
@@ -72,6 +73,7 @@ export function VedicWorkspace() {
     latitude: "",
     longitude: "",
     timezone: "Asia/Shanghai",
+    gender: "",
   });
   const [placeQuery, setPlaceQuery] = useState("");
   const [places, setPlaces] = useState<PlaceResult[]>([]);
@@ -82,9 +84,15 @@ export function VedicWorkspace() {
   );
   const [validationSubmitted, setValidationSubmitted] = useState(false);
   const [report, setReport] = useState("");
+  const [draft, setDraft] = useState("");
 
   const canSubmitBirth =
-    form.birth_date && form.birth_time && form.birth_place && form.latitude !== "" && form.longitude !== "";
+    form.birth_date &&
+    form.birth_time &&
+    form.birth_place &&
+    form.latitude !== "" &&
+    form.longitude !== "" &&
+    form.gender;
   const canSubmitValidation = responses.every((response) => response.answer);
 
   const latestAssistantText = useMemo(() => {
@@ -155,9 +163,17 @@ export function VedicWorkspace() {
       `latitude: ${form.latitude}`,
       `longitude: ${form.longitude}`,
       `timezone: ${form.timezone}`,
+      `gender: ${form.gender}`,
     ].join("\n");
     setBirthSubmitted(true);
     runtime.sendText(message);
+  }
+
+  function submitDraft() {
+    const text = draft.trim();
+    if (!text || runtime.isStreaming) return;
+    runtime.sendText(text);
+    setDraft("");
   }
 
   function submitValidation() {
@@ -245,6 +261,14 @@ export function VedicWorkspace() {
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
+
+        <AgentComposer
+          draft={draft}
+          setDraft={setDraft}
+          submitDraft={submitDraft}
+          isStreaming={runtime.isStreaming}
+          stop={runtime.stop}
+        />
       </section>
 
       <ArtifactPanel report={report} streaming={runtime.isStreaming && !report && validationSubmitted} />
@@ -402,10 +426,72 @@ function BirthFormCard({
           </label>
         </div>
 
+        <label className="space-y-1.5 text-sm font-medium">
+          性别
+          <select
+            value={form.gender}
+            onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">请选择</option>
+            <option value="female">女</option>
+            <option value="male">男</option>
+            <option value="other">其他/不透露</option>
+          </select>
+        </label>
+
         <Button onClick={onSubmit} disabled={!canSubmit || loading} className="w-full">
           {loading ? <Loader2 className="animate-spin" /> : <Search />}
           发送给 Agent
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function AgentComposer({
+  draft,
+  setDraft,
+  submitDraft,
+  isStreaming,
+  stop,
+}: {
+  draft: string;
+  setDraft: (value: string) => void;
+  submitDraft: () => void;
+  isStreaming: boolean;
+  stop: () => void;
+}) {
+  return (
+    <div className="border-t border-border p-3">
+      <div className="flex items-end gap-2 rounded-3xl border border-border bg-card px-3 py-2 shadow-sm">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submitDraft();
+            }
+          }}
+          rows={1}
+          placeholder="继续回复 Agent，例如：出生时间是 15:30"
+          className="max-h-[160px] flex-1"
+        />
+        {isStreaming ? (
+          <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={stop}>
+            <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            className="size-8 shrink-0 rounded-full"
+            onClick={submitDraft}
+            disabled={!draft.trim()}
+          >
+            <ArrowUp className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
