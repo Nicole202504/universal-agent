@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -75,23 +75,24 @@ const TIMEZONES = [
   "UTC",
 ];
 
-const REPORT_SEQUENCE = [
-  "太阳行星审计",
-  "月亮行星审计",
-  "火星行星审计",
-  "水星行星审计",
-  "木星行星审计",
-  "金星行星审计",
-  "土星行星审计",
-  "Rahu 行星审计",
-  "Ketu 行星审计",
-  "十二宫逐宫诊断",
-  "D9/D10/D4/D5 分盘交叉分析",
-  "职业专项报告",
-  "感情专项报告",
-  "Dasha 时间线与未来窗口",
-  "完整人生报告",
-];
+const REPORT_STEPS = [
+  { title: "太阳行星审计", section: "planet_audit", planet: "sun" },
+  { title: "月亮行星审计", section: "planet_audit", planet: "moon" },
+  { title: "火星行星审计", section: "planet_audit", planet: "mars" },
+  { title: "水星行星审计", section: "planet_audit", planet: "mercury" },
+  { title: "木星行星审计", section: "planet_audit", planet: "jupiter" },
+  { title: "金星行星审计", section: "planet_audit", planet: "venus" },
+  { title: "土星行星审计", section: "planet_audit", planet: "saturn" },
+  { title: "Rahu 行星审计", section: "planet_audit", planet: "rahu" },
+  { title: "Ketu 行星审计", section: "planet_audit", planet: "ketu" },
+  { title: "十二宫逐宫诊断", section: "houses" },
+  { title: "D9/D10/D4/D5 分盘交叉分析", section: "divisional" },
+  { title: "职业专项报告", section: "career" },
+  { title: "感情专项报告", section: "love" },
+  { title: "Dasha 时间线与未来窗口", section: "dasha" },
+  { title: "完整人生报告", section: "final_html" },
+] as const;
+const REPORT_SEQUENCE = REPORT_STEPS.map((step) => step.title);
 
 function defaultBirthForm(): BirthForm {
   return {
@@ -128,8 +129,57 @@ function sortArtifacts(rows: Artifact[]) {
   });
 }
 
+function findStepArtifact(artifacts: Artifact[], title: string) {
+  return artifacts.find((artifact) => artifact.title.includes(title));
+}
+
+function buildContinuationPrompt(
+  step: (typeof REPORT_STEPS)[number],
+  form: BirthForm,
+  validationItems: ValidationItem[],
+  answers: ValidationAnswer[],
+  artifacts: Artifact[],
+) {
+  const existing = artifacts.map((artifact) => artifact.title).join("、") || "暂无";
+  const feedback = answers.map((item) => {
+    const source = validationItems.find((validation) => validation.id === item.id);
+    const label = item.answer === "yes" ? "是" : item.answer === "no" ? "否" : "其他";
+    return `${item.id}. ${source?.assertion ?? "验前事"} -> ${label}${item.note ? `，补充：${item.note}` : ""}`;
+  });
+  const planetLine = "planet" in step ? `planet=${step.planet}` : "不需要 planet 参数";
+  const artifactType = step.section === "final_html" ? "html" : "markdown";
+
+  return [
+    "继续生成报告。上一轮已经停止，但前端检测到还有缺失模块，请不要重复已生成的产物。",
+    `已经生成的产物：${existing}`,
+    "",
+    `现在只生成下一个缺失模块：${step.title}`,
+    `必须调用 generate_vedic_report，section=${step.section}，${planetLine}。`,
+    `拿到工具结果后，必须立即调用 create_artifact，type=${artifactType}，title=${step.title}。`,
+    "这一轮只完成这个模块即可，完成后聊天区简短说明。",
+    "",
+    "出生信息：",
+    `birth_date: ${form.birth_date}`,
+    `birth_time: ${form.birth_time}`,
+    `birth_place: ${form.birth_place}`,
+    `latitude: ${form.latitude}`,
+    `longitude: ${form.longitude}`,
+    `timezone: ${form.timezone}`,
+    `gender: ${form.gender}`,
+    "",
+    "验前事反馈：",
+    ...feedback,
+    "",
+    step.section === "final_html"
+      ? "最终 HTML 必须是完整人生报告：整体人生画像、过去验证、未来 3-5 年节奏、人生 K 线图、通俗人生板块、行动建议和简短技术依据。不要复制行星审计。"
+      : "子报告要完整，但不要生成总报告。",
+  ].join("\n");
+}
+
 export function VedicWorkspace() {
   const runtime = useUniversalAgentChat();
+  const lastAutoResumeRef = useRef("");
+  const autoResumeBlockedUntilRef = useRef(0);
   const [form, setForm] = useState<BirthForm>(() => defaultBirthForm());
   const [placeQuery, setPlaceQuery] = useState("");
   const [places, setPlaces] = useState<PlaceResult[]>([]);
@@ -191,6 +241,23 @@ export function VedicWorkspace() {
     return () => window.clearInterval(timer);
   }, [reportStartedAt]);
 
+  useEffect(() => {
+    if (!reportStartedAt || runtime.isStreaming) return;
+    if (Date.now() < autoResumeBlockedUntilRef.current) return;
+    const nextStep = REPORT_STEPS.find((step) => !findStepArtifact(artifacts, step.title));
+    if (!nextStep) return;
+
+    const key = `${reportStartedAt}:${nextStep.title}:${artifacts.length}`;
+    if (lastAutoResumeRef.current === key) return;
+    lastAutoResumeRef.current = key;
+
+    const timer = window.setTimeout(() => {
+      runtime.sendText(buildContinuationPrompt(nextStep, form, validationItems, answers, artifacts));
+      autoResumeBlockedUntilRef.current = Date.now() + 8000;
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [answers, artifacts, form, reportStartedAt, runtime, validationItems]);
+
   function selectPlace(place: PlaceResult) {
     setForm((current) => ({
       ...current,
@@ -246,6 +313,8 @@ export function VedicWorkspace() {
     setReportStartedAt(startedAt);
     setArtifacts([]);
     setSelectedArtifactId(null);
+    lastAutoResumeRef.current = `initial:${startedAt}`;
+    autoResumeBlockedUntilRef.current = Date.now() + 15000;
 
     const answerText = answers.map((item) => {
       const source = validationItems.find((validation) => validation.id === item.id);

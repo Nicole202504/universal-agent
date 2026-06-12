@@ -12,7 +12,7 @@ const DEFAULT_PROMPT = "You are a general-purpose agent running on the universal
 const WORKSPACE_ARTIFACT_PROMPT = [
   "## Workspace artifacts",
   "When the user asks you to generate a complete report, markdown document, HTML page, or JSON output, call `create_artifact` with the complete content.",
-  "For Vedic final reports, always set `type` to `markdown`, title it clearly, and put the full paid-style report in `content`.",
+  "For Vedic section reports, use `type=markdown`; for the final user-facing life report, use `type=html` and title it `完整人生报告`.",
   "After the tool call succeeds, keep the chat reply short and tell the user the artifact is available in the right-side report panel.",
   "Do not only paste the generated artifact inline when `create_artifact` is available.",
 ].join("\n");
@@ -28,6 +28,7 @@ const INLINE_FORM_PROMPT = [
 // 业务从 D1 agent_config 装配 + code registry 注入，本类不 import 任何 businesses/*。
 export class UniversalAgent extends Think<Env, AgentState> {
   initialState: AgentState = { turns: 0 };
+  maxSteps = 30;
 
   private _config: AgentConfig | null = null;
   private _tools: ToolDef[] = [];
@@ -53,8 +54,9 @@ export class UniversalAgent extends Think<Env, AgentState> {
   }
 
   // 兜底：若 onStart 未先跑，进入一轮前确保已装配
-  async beforeTurn(): Promise<void> {
+  async beforeTurn(): Promise<{ maxSteps: number; maxOutputTokens: number } | void> {
     if (!this._assembled) await this.assemble();
+    return { maxSteps: 30, maxOutputTokens: 12000 };
   }
 
   getModel() {
