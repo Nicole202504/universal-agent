@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { useUniversalAgentChat } from "@/chat/use-universal-agent-chat";
+import { getUniversalAgentName } from "@/chat/use-universal-agent-chat";
 
 type PlaceResult = {
   id: string;
@@ -52,11 +52,30 @@ type ValidationAnswer = {
 
 type Artifact = {
   id: string;
+  run_id?: string;
   type: "markdown" | "html" | "json";
   title: string;
   description: string;
   content: string;
   created_at: number;
+};
+
+type ReportRunStep = {
+  step_key: string;
+  title: string;
+  section: string;
+  planet?: string | null;
+  status: "queued" | "running" | "completed" | "failed";
+  artifact_id?: string | null;
+  error?: string | null;
+};
+
+type ReportRun = {
+  id: string;
+  agent_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  current_step?: string | null;
+  error?: string | null;
 };
 
 const TIMEZONES = [
@@ -129,58 +148,8 @@ function sortArtifacts(rows: Artifact[]) {
   });
 }
 
-function findStepArtifact(artifacts: Artifact[], title: string) {
-  return artifacts.find((artifact) => artifact.title.includes(title));
-}
-
-function buildContinuationPrompt(
-  step: (typeof REPORT_STEPS)[number],
-  form: BirthForm,
-  validationItems: ValidationItem[],
-  answers: ValidationAnswer[],
-  artifacts: Artifact[],
-) {
-  const existing = artifacts.map((artifact) => artifact.title).join("、") || "暂无";
-  const feedback = answers.map((item) => {
-    const source = validationItems.find((validation) => validation.id === item.id);
-    const label = item.answer === "yes" ? "是" : item.answer === "no" ? "否" : "其他";
-    return `${item.id}. ${source?.assertion ?? "验前事"} -> ${label}${item.note ? `，补充：${item.note}` : ""}`;
-  });
-  const planetLine = "planet" in step ? `planet=${step.planet}` : "不需要 planet 参数";
-  const artifactType = step.section === "final_html" ? "html" : "markdown";
-
-  return [
-    "继续生成报告。上一轮已经停止，但前端检测到还有缺失模块，请不要重复已生成的产物。",
-    `已经生成的产物：${existing}`,
-    "",
-    `现在只生成下一个缺失模块：${step.title}`,
-    `必须调用 generate_vedic_report，section=${step.section}，${planetLine}。`,
-    `拿到工具结果后，必须立即调用 create_artifact，type=${artifactType}，title=${step.title}。`,
-    "这一轮只完成这个模块即可，完成后聊天区简短说明。",
-    "",
-    "出生信息：",
-    `birth_date: ${form.birth_date}`,
-    `birth_time: ${form.birth_time}`,
-    `birth_place: ${form.birth_place}`,
-    `latitude: ${form.latitude}`,
-    `longitude: ${form.longitude}`,
-    `timezone: ${form.timezone}`,
-    `gender: ${form.gender}`,
-    "",
-    "验前事反馈：",
-    ...feedback,
-    "",
-    step.section === "final_html"
-      ? "最终 HTML 必须是完整人生报告：整体人生画像、过去验证、未来 3-5 年节奏、人生 K 线图、通俗人生板块、行动建议和简短技术依据。不要复制行星审计。"
-      : "子报告要完整，但不要生成总报告。",
-  ].join("\n");
-}
-
 export function VedicWorkspace() {
-  const runtime = useUniversalAgentChat();
-  const sendTextRef = useRef(runtime.sendText);
-  const lastAutoResumeRef = useRef({ key: "", at: 0 });
-  const autoResumeBlockedUntilRef = useRef(0);
+  const agentName = useMemo(() => getUniversalAgentName(), []);
   const [form, setForm] = useState<BirthForm>(() => defaultBirthForm());
   const [placeQuery, setPlaceQuery] = useState("");
   const [places, setPlaces] = useState<PlaceResult[]>([]);
@@ -189,7 +158,10 @@ export function VedicWorkspace() {
   const [answers, setAnswers] = useState<ValidationAnswer[]>([]);
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationError, setValidationError] = useState("");
-  const [reportStartedAt, setReportStartedAt] = useState<number | null>(null);
+  const [reportRun, setReportRun] = useState<ReportRun | null>(null);
+  const [reportSteps, setReportSteps] = useState<ReportRunStep[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
 
@@ -205,15 +177,7 @@ export function VedicWorkspace() {
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0],
     [artifacts, selectedArtifactId],
   );
-  const isAgentRunning = Boolean(
-    runtime.isStreaming ||
-      runtime.status === "streaming" ||
-      runtime.status === "submitted",
-  );
-
-  useEffect(() => {
-    sendTextRef.current = runtime.sendText;
-  }, [runtime.sendText]);
+  const reportStarted = Boolean(reportRun);
 
   useEffect(() => {
     const q = placeQuery.trim();
@@ -234,12 +198,11 @@ export function VedicWorkspace() {
   }, [placeQuery]);
 
   useEffect(() => {
+    if (!reportRun) return;
     const refresh = async () => {
-      const response = await fetch(`/api/artifacts?agent_id=${encodeURIComponent(runtime.agentName)}`);
+      const response = await fetch(`/api/artifacts?run_id=${encodeURIComponent(reportRun.id)}`);
       if (!response.ok) return;
-      const rows = sortArtifacts(((await response.json()) as Artifact[])
-        .filter(isVedicArtifact)
-        .filter((artifact) => !reportStartedAt || artifact.created_at >= reportStartedAt - 5000));
+      const rows = sortArtifacts(((await response.json()) as Artifact[]).filter(isVedicArtifact));
       setArtifacts(rows);
       setSelectedArtifactId((current) => {
         const finalHtml = rows.find((artifact) => artifact.type === "html" && artifact.title.includes("完整人生报告"));
@@ -249,25 +212,23 @@ export function VedicWorkspace() {
     void refresh();
     const timer = window.setInterval(refresh, 2000);
     return () => window.clearInterval(timer);
-  }, [reportStartedAt, runtime.agentName]);
+  }, [reportRun]);
 
   useEffect(() => {
-    if (!reportStartedAt || isAgentRunning) return;
-    if (Date.now() < autoResumeBlockedUntilRef.current) return;
-    const nextStep = REPORT_STEPS.find((step) => !findStepArtifact(artifacts, step.title));
-    if (!nextStep) return;
-
-    const key = `${reportStartedAt}:${nextStep.title}:${artifacts.length}`;
-    const now = Date.now();
-    if (lastAutoResumeRef.current.key === key && now - lastAutoResumeRef.current.at < 45000) return;
-    lastAutoResumeRef.current = { key, at: now };
-
-    const timer = window.setTimeout(() => {
-      sendTextRef.current(buildContinuationPrompt(nextStep, form, validationItems, answers, artifacts));
-      autoResumeBlockedUntilRef.current = Date.now() + 12000;
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [answers, artifacts, form, isAgentRunning, reportStartedAt, validationItems]);
+    if (!reportRun) return;
+    const refresh = async () => {
+      const response = await fetch(`/api/vedic/report-runs/${encodeURIComponent(reportRun.id)}`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { run: ReportRun; steps: ReportRunStep[] };
+      setReportRun(data.run);
+      setReportSteps(data.steps);
+      if (data.run.error) setReportError(data.run.error);
+    };
+    void refresh();
+    if (reportRun.status === "completed" || reportRun.status === "failed") return;
+    const timer = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(timer);
+  }, [reportRun?.id, reportRun?.status]);
 
   function selectPlace(place: PlaceResult) {
     setForm((current) => ({
@@ -288,7 +249,9 @@ export function VedicWorkspace() {
     setValidationItems([]);
     setAnswers([]);
     setArtifacts([]);
-    setReportStartedAt(null);
+    setReportRun(null);
+    setReportSteps([]);
+    setReportError("");
     try {
       const response = await fetch("/api/vedic/validation", {
         method: "POST",
@@ -318,45 +281,39 @@ export function VedicWorkspace() {
     setAnswers((current) => current.map((item) => (item.id === id ? { ...item, note } : item)));
   }
 
-  function startReport() {
-    if (!canSubmitAnswers || runtime.isStreaming) return;
-    const startedAt = Date.now();
-    setReportStartedAt(startedAt);
+  async function startReport() {
+    if (!canSubmitAnswers || reportLoading) return;
+    setReportLoading(true);
+    setReportError("");
     setArtifacts([]);
     setSelectedArtifactId(null);
-    lastAutoResumeRef.current = { key: `initial:${startedAt}`, at: Date.now() };
-    autoResumeBlockedUntilRef.current = Date.now() + 20000;
-
-    const answerText = answers.map((item) => {
-      const source = validationItems.find((validation) => validation.id === item.id);
-      const label = item.answer === "yes" ? "是" : item.answer === "no" ? "否" : "其他";
-      return `${item.id}. ${source?.assertion ?? "验前事"} -> ${label}${item.note ? `，补充：${item.note}` : ""}`;
-    });
-
-    runtime.sendText(
-      [
-        "用户已经在前端完成出生信息表单和 5 条验前事确认。聊天区不展示给用户，请直接执行后续 Agent 流程。",
-        "",
-        "出生信息：",
-        `birth_date: ${form.birth_date}`,
-        `birth_time: ${form.birth_time}`,
-        `birth_place: ${form.birth_place}`,
-        `latitude: ${form.latitude}`,
-        `longitude: ${form.longitude}`,
-        `timezone: ${form.timezone}`,
-        `gender: ${form.gender}`,
-        "",
-        "5 条验前事与用户反馈：",
-        ...answerText,
-        "",
-        "现在必须先调用 evaluate_validation。",
-        "如果可以进入报告，必须依次加载 get_skill_instructions(\"vedic-core\"), get_skill_instructions(\"vedic-career\"), get_skill_instructions(\"vedic-love\")。",
-        "然后按分段产物模式生成报告：九颗行星逐颗审计，每颗完成后立即 create_artifact；再生成十二宫、分盘、职业、感情、Dasha。",
-        "最后必须调用 generate_vedic_report，section=final_html，生成完整 HTML 人生总报告，并用 create_artifact(type=html,title=完整人生报告) 写入右侧产物区。",
-        "最终 HTML 不是技术审计拼接，必须把行星审计重写成通俗的人生画像、过去/未来节奏、人生 K 线图和分板块建议。",
-        "不要让用户继续等待一个大回复。每个模块完成后都必须立即写入右侧 artifact。",
-      ].join("\n"),
-    );
+    try {
+      const response = await fetch("/api/vedic/report-runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: agentName,
+          birth: form,
+          validation_items: validationItems,
+          responses: answers,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(String(data.error || "report_run_failed"));
+      }
+      const data = (await response.json()) as {
+        run_id: string;
+        status: ReportRun["status"];
+        steps: ReportRunStep[];
+      };
+      setReportRun({ id: data.run_id, agent_id: agentName, status: data.status });
+      setReportSteps(data.steps);
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : "启动报告生成失败");
+    } finally {
+      setReportLoading(false);
+    }
   }
 
   return (
@@ -398,8 +355,8 @@ export function VedicWorkspace() {
             <StepHeader
               index={2}
               title="验前事确认"
-              active={validationItems.length > 0 && !reportStartedAt}
-              done={Boolean(reportStartedAt)}
+              active={validationItems.length > 0 && !reportStarted}
+              done={reportStarted}
             />
             {validationItems.length > 0 ? (
               <ValidationCard
@@ -408,7 +365,7 @@ export function VedicWorkspace() {
                 updateAnswer={updateAnswer}
                 updateNote={updateNote}
                 canSubmit={canSubmitAnswers}
-                loading={runtime.isStreaming}
+                loading={reportLoading}
                 onSubmit={startReport}
               />
             ) : (
@@ -418,12 +375,18 @@ export function VedicWorkspace() {
             <StepHeader
               index={3}
               title="报告生成"
-              active={Boolean(reportStartedAt)}
+              active={reportStarted}
               done={artifacts.some((artifact) => artifact.title.includes("完整人生报告"))}
             />
+            {reportError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {reportError}
+              </div>
+            )}
             <ProgressPanel
-              started={Boolean(reportStartedAt)}
-              streaming={runtime.isStreaming}
+              started={reportStarted}
+              run={reportRun}
+              steps={reportSteps}
               artifacts={artifacts}
               onSelect={setSelectedArtifactId}
             />
@@ -686,40 +649,68 @@ function ValidationCard({
 
 function ProgressPanel({
   started,
-  streaming,
+  run,
+  steps,
   artifacts,
   onSelect,
 }: {
   started: boolean;
-  streaming: boolean;
+  run: ReportRun | null;
+  steps: ReportRunStep[];
   artifacts: Artifact[];
   onSelect: (id: string) => void;
 }) {
   if (!started) return <EmptyPanel>确认 5 条验前事后，系统会逐个生成行星报告和最终总报告。</EmptyPanel>;
+  const visibleSteps: ReportRunStep[] = steps.length > 0
+    ? steps
+    : REPORT_STEPS.map((step) => ({
+        step_key: step.title,
+        title: step.title,
+        section: step.section,
+        planet: "planet" in step ? step.planet : null,
+        status: "queued" as const,
+        artifact_id: null,
+        error: null,
+      }));
+  const running = run?.status === "queued" || run?.status === "running";
   return (
     <div className="rounded-md border border-border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-semibold">生成进度</span>
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          {streaming && <Loader2 className="size-3 animate-spin" />}
-          {streaming ? "生成中" : "等待下一步"}
+          {running && <Loader2 className="size-3 animate-spin" />}
+          {run?.status === "completed" ? "已完成" : run?.status === "failed" ? "生成失败" : "后台生成中"}
         </span>
       </div>
       <div className="grid gap-2">
-        {REPORT_SEQUENCE.map((title) => {
-          const artifact = artifacts.find((item) => item.title.includes(title));
+        {visibleSteps.map((step) => {
+          const artifact = step.artifact_id
+            ? artifacts.find((item) => item.id === step.artifact_id)
+            : artifacts.find((item) => item.title.includes(step.title));
           return (
             <button
-              key={title}
+              key={step.step_key}
               type="button"
               onClick={() => artifact && onSelect(artifact.id)}
               className={cn(
                 "flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs",
-                artifact ? "border-primary/40 bg-primary-soft-bg text-foreground" : "border-border text-muted-foreground",
+                step.status === "failed"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : artifact || step.status === "completed"
+                    ? "border-primary/40 bg-primary-soft-bg text-foreground"
+                    : step.status === "running"
+                      ? "border-border bg-muted/50 text-foreground"
+                      : "border-border text-muted-foreground",
               )}
             >
-              {artifact ? <Check className="size-3.5 text-primary" /> : <RefreshCw className="size-3.5" />}
-              <span className="truncate">{title}</span>
+              {step.status === "completed" || artifact ? (
+                <Check className="size-3.5 text-primary" />
+              ) : step.status === "running" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+              <span className="truncate">{step.title}</span>
             </button>
           );
         })}

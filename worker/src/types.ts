@@ -5,6 +5,7 @@ export interface Env {
   DB: D1Database;
   UniversalAgent: DurableObjectNamespace;
   HELLO_WORKFLOW: Workflow;
+  VEDIC_REPORT_WORKFLOW: Workflow;
   ASSETS: Fetcher;
   DEEPSEEK_API_KEY: string;
   VEDIC_API_URL?: string;

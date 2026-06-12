@@ -25,6 +25,11 @@
       "name": "universal-agent-hello",
       "binding": "HELLO_WORKFLOW",
       "class_name": "HelloWorkflow"
+    },
+    {
+      "name": "universal-agent-vedic-report",
+      "binding": "VEDIC_REPORT_WORKFLOW",
+      "class_name": "VedicReportWorkflow"
     }
   ],
 

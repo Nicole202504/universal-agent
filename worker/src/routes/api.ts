@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
+import { reportStepsForRun } from "../businesses/vedic/report-workflow";
 
 export const apiRoutes = new Hono<{ Bindings: Env }>();
 
@@ -19,6 +20,12 @@ type ValidationItem = {
   assertion: string;
   evidence: string;
   area: string;
+};
+
+type ValidationResponse = {
+  id: number;
+  answer: "yes" | "no" | "other";
+  note?: string;
 };
 
 async function vedicApiCall(
@@ -190,9 +197,16 @@ apiRoutes.get("/runs", async (c) => {
 // 右侧产物区：列出 Agent 生成的报告 / HTML / JSON。
 apiRoutes.get("/artifacts", async (c) => {
   const agentId = c.req.query("agent_id")?.trim();
+  const runId = c.req.query("run_id")?.trim();
+  if (runId) {
+    const { results } = await c.env.DB.prepare(
+      "SELECT id, agent_id, run_id, type, title, description, content, created_at FROM artifacts WHERE run_id = ?1 ORDER BY created_at DESC LIMIT 50",
+    ).bind(runId).all();
+    return c.json(results);
+  }
   if (!agentId) return c.json([]);
   const { results } = await c.env.DB.prepare(
-    "SELECT id, agent_id, type, title, description, content, created_at FROM artifacts WHERE agent_id = ?1 ORDER BY created_at DESC LIMIT 50",
+    "SELECT id, agent_id, run_id, type, title, description, content, created_at FROM artifacts WHERE agent_id = ?1 ORDER BY created_at DESC LIMIT 50",
   ).bind(agentId).all();
   return c.json(results);
 });
@@ -271,6 +285,73 @@ apiRoutes.post("/vedic/validation", async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "validation_failed" }, 500);
   }
+});
+
+apiRoutes.post("/vedic/report-runs", async (c) => {
+  try {
+    const body = await c.req.json<{
+      agent_id?: string;
+      birth: BirthPayload & { gender?: string };
+      validation_items: ValidationItem[];
+      responses: ValidationResponse[];
+    }>();
+    const agentId = body.agent_id?.trim();
+    if (!agentId) return c.json({ error: "missing_agent_id" }, 400);
+    const runId = crypto.randomUUID();
+    const now = Date.now();
+    const steps = reportStepsForRun();
+
+    await c.env.DB.prepare(
+      "INSERT INTO vedic_report_runs (id, agent_id, birth_json, validation_json, status, current_step, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6, ?6)",
+    )
+      .bind(
+        runId,
+        agentId,
+        JSON.stringify(body.birth),
+        JSON.stringify({ items: body.validation_items, responses: body.responses }),
+        steps[0]?.key ?? null,
+        now,
+      )
+      .run();
+
+    const statements = steps.map((item) =>
+      c.env.DB.prepare(
+        "INSERT INTO vedic_report_steps (run_id, step_key, title, section, planet, status) VALUES (?1, ?2, ?3, ?4, ?5, 'queued')",
+      ).bind(runId, item.key, item.title, item.section, item.planet ?? null),
+    );
+    await c.env.DB.batch(statements);
+
+    const instance = await c.env.VEDIC_REPORT_WORKFLOW.create({
+      params: {
+        runId,
+        agentId,
+        birth: body.birth,
+        validationItems: body.validation_items,
+        responses: body.responses,
+      },
+    });
+
+    return c.json({
+      run_id: runId,
+      instance_id: instance.id,
+      status: "queued",
+      steps: steps.map((item) => ({ ...item, step_key: item.key, status: "queued" })),
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "report_run_failed" }, 500);
+  }
+});
+
+apiRoutes.get("/vedic/report-runs/:runId", async (c) => {
+  const runId = c.req.param("runId");
+  const run = await c.env.DB.prepare(
+    "SELECT id, agent_id, status, current_step, error, created_at, updated_at, completed_at FROM vedic_report_runs WHERE id = ?1",
+  ).bind(runId).first();
+  if (!run) return c.json({ error: "not_found" }, 404);
+  const { results: steps } = await c.env.DB.prepare(
+    "SELECT run_id, step_key, title, section, planet, status, artifact_id, error, started_at, completed_at FROM vedic_report_steps WHERE run_id = ?1 ORDER BY rowid ASC",
+  ).bind(runId).all();
+  return c.json({ run, steps });
 });
 
 apiRoutes.post("/vedic/report", async (c) => {
