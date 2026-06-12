@@ -1,14 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Check, FileText, Loader2, MapPin, Search, Sparkles, Square, X } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  FileText,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useUniversalAgentChat } from "@/chat/use-universal-agent-chat";
-import { getMessageText } from "@/chat/model/message-helpers";
-import { ToolCardList } from "@/chat/tools/tool-card-list";
 
 type PlaceResult = {
   id: string;
@@ -29,10 +37,26 @@ type BirthForm = {
   gender: string;
 };
 
-type ValidationResponse = {
+type ValidationItem = {
+  id: number;
+  area: string;
+  assertion: string;
+  evidence: string;
+};
+
+type ValidationAnswer = {
   id: number;
   answer: "yes" | "no" | "other" | "";
   note: string;
+};
+
+type Artifact = {
+  id: string;
+  type: "markdown" | "html" | "json";
+  title: string;
+  description: string;
+  content: string;
+  created_at: number;
 };
 
 const TIMEZONES = [
@@ -51,22 +75,26 @@ const TIMEZONES = [
   "UTC",
 ];
 
-function hasReport(text: string) {
-  return (
-    text.includes("吠陀占星完整分析报告") ||
-    (text.includes("九大行星") && text.includes("十二宫") && text.includes("事业")) ||
-    (text.length > 3500 && text.includes("报告"))
-  );
-}
+const REPORT_SEQUENCE = [
+  "太阳行星审计",
+  "月亮行星审计",
+  "火星行星审计",
+  "水星行星审计",
+  "木星行星审计",
+  "金星行星审计",
+  "土星行星审计",
+  "Rahu 行星审计",
+  "Ketu 行星审计",
+  "十二宫逐宫诊断",
+  "D9/D10/D4/D5 分盘交叉分析",
+  "职业专项报告",
+  "感情专项报告",
+  "Dasha 时间线与未来窗口",
+  "吠陀占星完整分析报告",
+];
 
-function isToolPart(part: { type: string }) {
-  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
-}
-
-export function VedicWorkspace() {
-  const runtime = useUniversalAgentChat();
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const [form, setForm] = useState<BirthForm>({
+function defaultBirthForm(): BirthForm {
+  return {
     birth_date: "",
     birth_time: "",
     birth_place: "",
@@ -74,17 +102,33 @@ export function VedicWorkspace() {
     longitude: "",
     timezone: "Asia/Shanghai",
     gender: "",
-  });
+  };
+}
+
+function formatGender(value: string) {
+  if (value === "female") return "女";
+  if (value === "male") return "男";
+  return "其他/不透露";
+}
+
+function isVedicArtifact(artifact: Artifact) {
+  const haystack = `${artifact.title} ${artifact.description}`;
+  return REPORT_SEQUENCE.some((title) => haystack.includes(title)) || haystack.includes("行星审计");
+}
+
+export function VedicWorkspace() {
+  const runtime = useUniversalAgentChat();
+  const [form, setForm] = useState<BirthForm>(() => defaultBirthForm());
   const [placeQuery, setPlaceQuery] = useState("");
   const [places, setPlaces] = useState<PlaceResult[]>([]);
   const [placeLoading, setPlaceLoading] = useState(false);
-  const [birthSubmitted, setBirthSubmitted] = useState(false);
-  const [responses, setResponses] = useState<ValidationResponse[]>(
-    Array.from({ length: 5 }, (_, index) => ({ id: index + 1, answer: "", note: "" })),
-  );
-  const [validationSubmitted, setValidationSubmitted] = useState(false);
-  const [report, setReport] = useState("");
-  const [draft, setDraft] = useState("");
+  const [validationItems, setValidationItems] = useState<ValidationItem[]>([]);
+  const [answers, setAnswers] = useState<ValidationAnswer[]>([]);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationError, setValidationError] = useState("");
+  const [reportStartedAt, setReportStartedAt] = useState<number | null>(null);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
 
   const canSubmitBirth =
     form.birth_date &&
@@ -93,31 +137,11 @@ export function VedicWorkspace() {
     form.latitude !== "" &&
     form.longitude !== "" &&
     form.gender;
-  const canSubmitValidation = responses.every((response) => response.answer);
-
-  const latestAssistantText = useMemo(() => {
-    const assistant = [...runtime.messages].reverse().find((message) => message.role === "assistant");
-    return assistant ? getMessageText(assistant) : "";
-  }, [runtime.messages]);
-
-  const shouldShowValidationCard =
-    birthSubmitted &&
-    !validationSubmitted &&
-    (latestAssistantText.includes("请选择") ||
-      latestAssistantText.includes("是 / 否") ||
-      latestAssistantText.includes("验前事"));
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [runtime.messages, shouldShowValidationCard, runtime.isStreaming]);
-
-  useEffect(() => {
-    for (const message of runtime.messages) {
-      if (message.role !== "assistant") continue;
-      const text = getMessageText(message);
-      if (hasReport(text)) setReport(text);
-    }
-  }, [runtime.messages]);
+  const canSubmitAnswers = answers.length === 5 && answers.every((answer) => answer.answer);
+  const selectedArtifact = useMemo(
+    () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0],
+    [artifacts, selectedArtifactId],
+  );
 
   useEffect(() => {
     const q = placeQuery.trim();
@@ -128,14 +152,30 @@ export function VedicWorkspace() {
     const timer = window.setTimeout(async () => {
       setPlaceLoading(true);
       try {
-        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`);
-        setPlaces(res.ok ? await res.json() : []);
+        const response = await fetch(`/api/places?q=${encodeURIComponent(q)}`);
+        setPlaces(response.ok ? await response.json() : []);
       } finally {
         setPlaceLoading(false);
       }
-    }, 300);
+    }, 260);
     return () => window.clearTimeout(timer);
   }, [placeQuery]);
+
+  useEffect(() => {
+    const refresh = async () => {
+      const response = await fetch("/api/artifacts");
+      if (!response.ok) return;
+      const rows = ((await response.json()) as Artifact[])
+        .filter((artifact) => artifact.type === "markdown")
+        .filter(isVedicArtifact)
+        .filter((artifact) => !reportStartedAt || artifact.created_at >= reportStartedAt - 5000);
+      setArtifacts(rows);
+      setSelectedArtifactId((current) => current ?? rows[0]?.id ?? null);
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(timer);
+  }, [reportStartedAt]);
 
   function selectPlace(place: PlaceResult) {
     setForm((current) => ({
@@ -149,71 +189,82 @@ export function VedicWorkspace() {
     setPlaces([]);
   }
 
-  function submitBirth() {
-    const message = [
-      "请启动 Vedic Agent 主流程。",
-      "第一步必须加载 get_skill_instructions(\"vedic-reader\") 和 get_skill_instructions(\"vedic-calculator\")。",
-      "然后调用 collect_birth_data 排盘，再调用 generate_validation_statements 输出 5 条验前事。",
-      "验前事必须是用户可选择「是/否/其他」的判断题。不要生成最终报告。",
-      "",
-      "出生信息：",
-      `birth_date: ${form.birth_date}`,
-      `birth_time: ${form.birth_time}`,
-      `birth_place: ${form.birth_place}`,
-      `latitude: ${form.latitude}`,
-      `longitude: ${form.longitude}`,
-      `timezone: ${form.timezone}`,
-      `gender: ${form.gender}`,
-    ].join("\n");
-    setBirthSubmitted(true);
-    runtime.sendText(message);
+  async function generateValidation() {
+    if (!canSubmitBirth || validationLoading) return;
+    setValidationLoading(true);
+    setValidationError("");
+    setValidationItems([]);
+    setAnswers([]);
+    setArtifacts([]);
+    setReportStartedAt(null);
+    try {
+      const response = await fetch("/api/vedic/validation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(String(data.error || "validation_failed"));
+      }
+      const data = (await response.json()) as { validation_items: ValidationItem[] };
+      const nextItems = data.validation_items.slice(0, 5);
+      setValidationItems(nextItems);
+      setAnswers(nextItems.map((item) => ({ id: item.id, answer: "", note: "" })));
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : "生成验前事失败");
+    } finally {
+      setValidationLoading(false);
+    }
   }
 
-  function submitDraft() {
-    const text = draft.trim();
-    if (!text || runtime.isStreaming) return;
-    runtime.sendText(text);
-    setDraft("");
-  }
-
-  function submitValidation() {
-    const lines = responses.map((response) => {
-      const answer = response.answer === "yes" ? "是" : response.answer === "no" ? "否" : "其他";
-      return `${response.id}. ${answer}${response.note ? `，补充：${response.note}` : ""}`;
-    });
-    const message = [
-      "我的 5 条验前事确认结果如下：",
-      ...lines,
-      "",
-      "请现在调用 evaluate_validation。",
-      "如果可以进入报告，请必须依次加载：",
-      "get_skill_instructions(\"vedic-core\")",
-      "get_skill_instructions(\"vedic-career\")",
-      "get_skill_instructions(\"vedic-love\")",
-      "",
-      "然后生成一份全局完整报告。报告必须包含：",
-      "1. 每一颗行星的 P1-P12 审计。",
-      "2. 十二宫逐宫诊断。",
-      "3. D9/D10/D4/D5 分盘交叉分析。",
-      "4. 职业专项，使用 vedic-career 逻辑。",
-      "5. 感情专项，使用 vedic-love 逻辑。",
-      "6. Dasha 时间线和未来窗口。",
-      "请把完整报告作为一条 Markdown 输出，标题为 # 吠陀占星完整分析报告。",
-    ].join("\n");
-    setValidationSubmitted(true);
-    runtime.sendText(message);
-  }
-
-  function updateResponse(id: number, answer: ValidationResponse["answer"]) {
-    setResponses((current) => current.map((item) => (item.id === id ? { ...item, answer } : item)));
+  function updateAnswer(id: number, answer: ValidationAnswer["answer"]) {
+    setAnswers((current) => current.map((item) => (item.id === id ? { ...item, answer } : item)));
   }
 
   function updateNote(id: number, note: string) {
-    setResponses((current) => current.map((item) => (item.id === id ? { ...item, note } : item)));
+    setAnswers((current) => current.map((item) => (item.id === id ? { ...item, note } : item)));
+  }
+
+  function startReport() {
+    if (!canSubmitAnswers || runtime.isStreaming) return;
+    const startedAt = Date.now();
+    setReportStartedAt(startedAt);
+    setArtifacts([]);
+    setSelectedArtifactId(null);
+
+    const answerText = answers.map((item) => {
+      const source = validationItems.find((validation) => validation.id === item.id);
+      const label = item.answer === "yes" ? "是" : item.answer === "no" ? "否" : "其他";
+      return `${item.id}. ${source?.assertion ?? "验前事"} -> ${label}${item.note ? `，补充：${item.note}` : ""}`;
+    });
+
+    runtime.sendText(
+      [
+        "用户已经在前端完成出生信息表单和 5 条验前事确认。聊天区不展示给用户，请直接执行后续 Agent 流程。",
+        "",
+        "出生信息：",
+        `birth_date: ${form.birth_date}`,
+        `birth_time: ${form.birth_time}`,
+        `birth_place: ${form.birth_place}`,
+        `latitude: ${form.latitude}`,
+        `longitude: ${form.longitude}`,
+        `timezone: ${form.timezone}`,
+        `gender: ${form.gender}`,
+        "",
+        "5 条验前事与用户反馈：",
+        ...answerText,
+        "",
+        "现在必须先调用 evaluate_validation。",
+        "如果可以进入报告，必须依次加载 get_skill_instructions(\"vedic-core\"), get_skill_instructions(\"vedic-career\"), get_skill_instructions(\"vedic-love\")。",
+        "然后按分段产物模式生成报告：九颗行星逐颗审计，每颗完成后立即 create_artifact；再生成十二宫、分盘、职业、感情、Dasha；最后生成总报告 artifact。",
+        "不要让用户继续等待一个大回复。每个模块完成后都必须立即写入右侧 artifact。",
+      ].join("\n"),
+    );
   }
 
   return (
-    <div className="grid h-dvh w-screen grid-cols-[minmax(420px,540px)_1fr] overflow-hidden bg-background text-foreground">
+    <div className="grid h-dvh w-screen grid-cols-[minmax(420px,520px)_1fr] overflow-hidden bg-background text-foreground">
       <section className="flex min-h-0 flex-col border-r border-border bg-background">
         <header className="border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
@@ -224,91 +275,107 @@ export function VedicWorkspace() {
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-4 p-5">
-            <AgentBubble title="出生信息">
-              先填写出生日期、时间和地点。我会把这组结构化信息发给 Agent，由它自己加载 skill、排盘、生成验前事。
-            </AgentBubble>
-
-            {!birthSubmitted && (
-              <BirthFormCard
-                form={form}
-                setForm={setForm}
-                placeQuery={placeQuery}
-                setPlaceQuery={setPlaceQuery}
-                places={places}
-                placeLoading={placeLoading}
-                selectPlace={selectPlace}
-                canSubmit={Boolean(canSubmitBirth)}
-                loading={runtime.isStreaming}
-                onSubmit={submitBirth}
-              />
+            <StepHeader
+              index={1}
+              title="出生信息"
+              active={validationItems.length === 0}
+              done={validationItems.length > 0}
+            />
+            <BirthFormCard
+              form={form}
+              setForm={setForm}
+              placeQuery={placeQuery}
+              setPlaceQuery={setPlaceQuery}
+              places={places}
+              placeLoading={placeLoading}
+              selectPlace={selectPlace}
+              canSubmit={Boolean(canSubmitBirth)}
+              loading={validationLoading}
+              onSubmit={generateValidation}
+            />
+            {validationError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {validationError}
+              </div>
             )}
 
-            {runtime.messages.map((message, index) => (
-              <ChatMessage key={message.id ?? index} message={message} active={runtime.isStreaming && index === runtime.messages.length - 1} />
-            ))}
-
-            {shouldShowValidationCard && (
+            <StepHeader
+              index={2}
+              title="验前事确认"
+              active={validationItems.length > 0 && !reportStartedAt}
+              done={Boolean(reportStartedAt)}
+            />
+            {validationItems.length > 0 ? (
               <ValidationCard
-                responses={responses}
-                updateResponse={updateResponse}
+                items={validationItems}
+                answers={answers}
+                updateAnswer={updateAnswer}
                 updateNote={updateNote}
-                canSubmit={canSubmitValidation}
+                canSubmit={canSubmitAnswers}
                 loading={runtime.isStreaming}
-                onSubmit={submitValidation}
+                onSubmit={startReport}
               />
+            ) : (
+              <EmptyPanel>提交出生信息后，这里会出现 5 条可选择“是 / 否 / 其他”的验证问题。</EmptyPanel>
             )}
 
-            <div ref={bottomRef} />
+            <StepHeader
+              index={3}
+              title="报告生成"
+              active={Boolean(reportStartedAt)}
+              done={artifacts.some((artifact) => artifact.title.includes("完整分析报告"))}
+            />
+            <ProgressPanel
+              started={Boolean(reportStartedAt)}
+              streaming={runtime.isStreaming}
+              artifacts={artifacts}
+              onSelect={setSelectedArtifactId}
+            />
           </div>
         </ScrollArea>
-
-        <AgentComposer
-          draft={draft}
-          setDraft={setDraft}
-          submitDraft={submitDraft}
-          isStreaming={runtime.isStreaming}
-          stop={runtime.stop}
-        />
       </section>
 
-      <ArtifactPanel report={report} streaming={runtime.isStreaming && !report && validationSubmitted} />
+      <ReportPanel
+        artifacts={artifacts}
+        selected={selectedArtifact}
+        selectedId={selectedArtifact?.id ?? ""}
+        onSelect={setSelectedArtifactId}
+      />
     </div>
   );
 }
 
-function AgentBubble({ title, children }: { title?: string; children: ReactNode }) {
+function StepHeader({
+  index,
+  title,
+  active,
+  done,
+}: {
+  index: number;
+  title: string;
+  active: boolean;
+  done: boolean;
+}) {
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[92%] rounded-md border border-border bg-card px-3 py-2 text-sm shadow-sm">
-        {title && <div className="mb-1 text-xs font-semibold text-muted-foreground">{title}</div>}
-        <div className="leading-6">{children}</div>
-      </div>
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
+          done ? "bg-primary text-primary-foreground" : active ? "bg-primary-soft-bg text-primary" : "bg-muted text-muted-foreground",
+        )}
+      >
+        {done ? <Check className="size-3.5" /> : index}
+      </span>
+      <h2 className="text-sm font-semibold">{title}</h2>
     </div>
   );
 }
 
-function ChatMessage({ message, active }: { message: { role: string; parts: Array<{ type: string }> }; active: boolean }) {
-  const text = getMessageText(message as Parameters<typeof getMessageText>[0]);
-  const toolParts = message.parts.filter(isToolPart) as never[];
-  if (message.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[86%] whitespace-pre-wrap rounded-md bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground">
-          {text}
-        </div>
-      </div>
-    );
-  }
+function EmptyPanel({ children }: { children: string }) {
   return (
-    <AgentBubble title="Agent">
-      {text && (
-        <div className="prose prose-sm max-w-none text-foreground prose-p:my-1 prose-pre:my-2 prose-table:text-xs">
-          <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-          {active && <span className="ml-0.5 inline-block animate-pulse">▍</span>}
-        </div>
-      )}
-      {toolParts.length > 0 && <ToolCardList toolParts={toolParts} />}
-    </AgentBubble>
+    <div className="rounded-md border border-dashed border-border bg-card px-3 py-4 text-sm leading-6 text-muted-foreground">
+      {children}
+    </div>
   );
 }
 
@@ -337,10 +404,6 @@ function BirthFormCard({
 }) {
   return (
     <div className="rounded-md border border-border bg-card p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Sparkles className="size-4 text-primary" />
-        Agent 表单输入
-      </div>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <label className="space-y-1.5 text-sm font-medium">
@@ -348,7 +411,7 @@ function BirthFormCard({
             <input
               type="date"
               value={form.birth_date}
-              onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+              onChange={(event) => setForm({ ...form, birth_date: event.target.value })}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
@@ -357,21 +420,21 @@ function BirthFormCard({
             <input
               type="time"
               value={form.birth_time}
-              onChange={(e) => setForm({ ...form, birth_time: e.target.value })}
+              onChange={(event) => setForm({ ...form, birth_time: event.target.value })}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
         </div>
 
         <label className="space-y-1.5 text-sm font-medium">
-          出生地点
+          出生城市
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
             <input
               value={placeQuery}
-              onChange={(e) => {
-                setPlaceQuery(e.target.value);
-                setForm({ ...form, birth_place: e.target.value, latitude: "", longitude: "" });
+              onChange={(event) => {
+                setPlaceQuery(event.target.value);
+                setForm({ ...form, birth_place: event.target.value, latitude: "", longitude: "" });
               }}
               placeholder="输入城市、区县或英文地名"
               className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
@@ -393,44 +456,18 @@ function BirthFormCard({
             )}
           </div>
           {placeLoading && <span className="text-xs text-muted-foreground">搜索地点中...</span>}
+          {form.latitude !== "" && form.longitude !== "" && (
+            <span className="block text-xs text-muted-foreground">
+              已选择：{Number(form.latitude).toFixed(3)}, {Number(form.longitude).toFixed(3)} · {form.timezone}
+            </span>
+          )}
         </label>
-
-        <div className="grid grid-cols-3 gap-3">
-          <label className="space-y-1.5 text-sm font-medium">
-            纬度
-            <input
-              value={form.latitude}
-              onChange={(e) => setForm({ ...form, latitude: Number(e.target.value) })}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-          <label className="space-y-1.5 text-sm font-medium">
-            经度
-            <input
-              value={form.longitude}
-              onChange={(e) => setForm({ ...form, longitude: Number(e.target.value) })}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-          <label className="space-y-1.5 text-sm font-medium">
-            时区
-            <select
-              value={form.timezone}
-              onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-              className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            >
-              {TIMEZONES.map((zone) => (
-                <option key={zone}>{zone}</option>
-              ))}
-            </select>
-          </label>
-        </div>
 
         <label className="space-y-1.5 text-sm font-medium">
           性别
           <select
             value={form.gender}
-            onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            onChange={(event) => setForm({ ...form, gender: event.target.value })}
             className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">请选择</option>
@@ -440,73 +477,54 @@ function BirthFormCard({
           </select>
         </label>
 
+        <details className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer text-foreground">高级：时区与坐标</summary>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <input
+              value={form.latitude}
+              onChange={(event) => setForm({ ...form, latitude: Number(event.target.value) })}
+              placeholder="纬度"
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+            />
+            <input
+              value={form.longitude}
+              onChange={(event) => setForm({ ...form, longitude: Number(event.target.value) })}
+              placeholder="经度"
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+            />
+            <select
+              value={form.timezone}
+              onChange={(event) => setForm({ ...form, timezone: event.target.value })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+            >
+              {TIMEZONES.map((zone) => (
+                <option key={zone}>{zone}</option>
+              ))}
+            </select>
+          </div>
+        </details>
+
         <Button onClick={onSubmit} disabled={!canSubmit || loading} className="w-full">
-          {loading ? <Loader2 className="animate-spin" /> : <Search />}
-          发送给 Agent
+          {loading ? <Loader2 className="animate-spin" /> : <Sparkles />}
+          生成 5 条验前事
         </Button>
       </div>
     </div>
   );
 }
 
-function AgentComposer({
-  draft,
-  setDraft,
-  submitDraft,
-  isStreaming,
-  stop,
-}: {
-  draft: string;
-  setDraft: (value: string) => void;
-  submitDraft: () => void;
-  isStreaming: boolean;
-  stop: () => void;
-}) {
-  return (
-    <div className="border-t border-border p-3">
-      <div className="flex items-end gap-2 rounded-3xl border border-border bg-card px-3 py-2 shadow-sm">
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submitDraft();
-            }
-          }}
-          rows={1}
-          placeholder="继续回复 Agent，例如：出生时间是 15:30"
-          className="max-h-[160px] flex-1"
-        />
-        {isStreaming ? (
-          <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={stop}>
-            <Square className="size-3.5 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            className="size-8 shrink-0 rounded-full"
-            onClick={submitDraft}
-            disabled={!draft.trim()}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ValidationCard({
-  responses,
-  updateResponse,
+  items,
+  answers,
+  updateAnswer,
   updateNote,
   canSubmit,
   loading,
   onSubmit,
 }: {
-  responses: ValidationResponse[];
-  updateResponse: (id: number, answer: ValidationResponse["answer"]) => void;
+  items: ValidationItem[];
+  answers: ValidationAnswer[];
+  updateAnswer: (id: number, answer: ValidationAnswer["answer"]) => void;
   updateNote: (id: number, note: string) => void;
   canSubmit: boolean;
   loading: boolean;
@@ -514,54 +532,117 @@ function ValidationCard({
 }) {
   return (
     <div className="rounded-md border border-border bg-card p-4 shadow-sm">
-      <div className="mb-3 text-sm font-semibold">验前事确认</div>
       <div className="space-y-3">
-        {responses.map((response) => (
-          <div key={response.id} className="rounded-md border border-border bg-background p-3">
-            <div className="mb-2 text-sm font-medium">第 {response.id} 条</div>
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                variant={response.answer === "yes" ? "default" : "outline"}
-                size="sm"
-                onClick={() => updateResponse(response.id, "yes")}
-              >
-                <Check /> 是
-              </Button>
-              <Button
-                variant={response.answer === "no" ? "default" : "outline"}
-                size="sm"
-                onClick={() => updateResponse(response.id, "no")}
-              >
-                <X /> 否
-              </Button>
-              <Button
-                variant={response.answer === "other" ? "default" : "outline"}
-                size="sm"
-                onClick={() => updateResponse(response.id, "other")}
-              >
-                其他
-              </Button>
+        {items.map((item) => {
+          const answer = answers.find((entry) => entry.id === item.id);
+          return (
+            <div key={item.id} className="rounded-md border border-border bg-background p-3">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="rounded bg-primary-soft-bg px-1.5 py-0.5 text-xs font-medium text-primary">
+                  {item.area || `第 ${item.id} 条`}
+                </span>
+                <span className="text-xs text-muted-foreground">#{item.id}</span>
+              </div>
+              <p className="text-sm font-medium leading-6">{item.assertion}</p>
+              {item.evidence && <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.evidence}</p>}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <Button
+                  variant={answer?.answer === "yes" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => updateAnswer(item.id, "yes")}
+                >
+                  <Check /> 是
+                </Button>
+                <Button
+                  variant={answer?.answer === "no" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => updateAnswer(item.id, "no")}
+                >
+                  <X /> 否
+                </Button>
+                <Button
+                  variant={answer?.answer === "other" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => updateAnswer(item.id, "other")}
+                >
+                  其他
+                </Button>
+              </div>
+              {answer?.answer === "other" && (
+                <Textarea
+                  value={answer.note}
+                  onChange={(event) => updateNote(item.id, event.target.value)}
+                  placeholder="可以补充说明"
+                  className="mt-2 rounded-md border border-input bg-background"
+                />
+              )}
             </div>
-            {response.answer === "other" && (
-              <Textarea
-                value={response.note}
-                onChange={(e) => updateNote(response.id, e.target.value)}
-                placeholder="补充说明"
-                className="mt-2 rounded-md border border-input bg-background"
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
       <Button onClick={onSubmit} disabled={!canSubmit || loading} className="mt-3 w-full">
-        {loading ? <Loader2 className="animate-spin" /> : <FileText />}
-        发送确认结果给 Agent
+        {loading ? <Loader2 className="animate-spin" /> : <ChevronRight />}
+        开始生成分段报告
       </Button>
     </div>
   );
 }
 
-function ArtifactPanel({ report, streaming }: { report: string; streaming: boolean }) {
+function ProgressPanel({
+  started,
+  streaming,
+  artifacts,
+  onSelect,
+}: {
+  started: boolean;
+  streaming: boolean;
+  artifacts: Artifact[];
+  onSelect: (id: string) => void;
+}) {
+  if (!started) return <EmptyPanel>确认 5 条验前事后，系统会逐个生成行星报告和最终总报告。</EmptyPanel>;
+  return (
+    <div className="rounded-md border border-border bg-card p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-semibold">生成进度</span>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          {streaming && <Loader2 className="size-3 animate-spin" />}
+          {streaming ? "生成中" : "等待下一步"}
+        </span>
+      </div>
+      <div className="grid gap-2">
+        {REPORT_SEQUENCE.map((title) => {
+          const artifact = artifacts.find((item) => item.title.includes(title));
+          return (
+            <button
+              key={title}
+              type="button"
+              onClick={() => artifact && onSelect(artifact.id)}
+              className={cn(
+                "flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs",
+                artifact ? "border-primary/40 bg-primary-soft-bg text-foreground" : "border-border text-muted-foreground",
+              )}
+            >
+              {artifact ? <Check className="size-3.5 text-primary" /> : <RefreshCw className="size-3.5" />}
+              <span className="truncate">{title}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportPanel({
+  artifacts,
+  selected,
+  selectedId,
+  onSelect,
+}: {
+  artifacts: Artifact[];
+  selected?: Artifact;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
   return (
     <section className="flex min-h-0 flex-col bg-card">
       <header className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -569,18 +650,40 @@ function ArtifactPanel({ report, streaming }: { report: string; streaming: boole
           <FileText className="size-5 text-muted-foreground" />
           <h2 className="text-base font-semibold">报告产物</h2>
         </div>
-        <span className={cn("text-xs", report ? "text-primary" : "text-muted-foreground")}>
-          {report ? "已生成" : streaming ? "生成中" : "等待生成"}
+        <span className={cn("text-xs", artifacts.length > 0 ? "text-primary" : "text-muted-foreground")}>
+          {artifacts.length > 0 ? `${artifacts.length} 个模块` : "等待生成"}
         </span>
       </header>
-      <ScrollArea className="min-h-0 flex-1">
-        {report ? (
+
+      {artifacts.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto border-b border-border px-4 py-3">
+          {artifacts.map((artifact) => (
+            <button
+              key={artifact.id}
+              type="button"
+              onClick={() => onSelect(artifact.id)}
+              className={cn(
+                "w-44 shrink-0 rounded-md border px-3 py-2 text-left",
+                selectedId === artifact.id
+                  ? "border-primary bg-primary-soft-bg"
+                  : "border-border bg-background hover:bg-muted/60",
+              )}
+            >
+              <span className="block truncate text-xs font-medium">{artifact.title}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{artifact.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <ScrollArea className="min-h-0 flex-1 bg-background">
+        {selected ? (
           <article className="prose prose-sm max-w-none p-8 text-foreground prose-headings:scroll-mt-4 prose-table:text-sm">
-            <Markdown remarkPlugins={[remarkGfm]}>{report}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]}>{selected.content}</Markdown>
           </article>
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            Agent 完成 skill 加载与完整报告输出后，这里会同步显示报告产物。
+            完成验前事确认后，行星报告会一个个出现在这里，最后生成完整总报告。
           </div>
         )}
       </ScrollArea>

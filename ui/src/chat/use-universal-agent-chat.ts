@@ -1,10 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 
 // agent 值 = DO class 名（Agents SDK 路由约定）；name = 实例名 → agent_config.id
 const AGENT = "UniversalAgent";
-const NAME = "vedic-prod-v2";
+const FALLBACK_NAME = "vedic-prod-v2";
+const SESSION_KEY = "vedic-agent-session-v1";
 
 type ChatMessage = {
   id?: string;
@@ -12,6 +13,15 @@ type ChatMessage = {
   parts?: Array<Record<string, unknown>>;
   [key: string]: unknown;
 };
+
+function getStoredAgentName() {
+  if (typeof window === "undefined") return FALLBACK_NAME;
+  const existing = window.localStorage.getItem(SESSION_KEY);
+  if (existing) return existing;
+  const next = `vedic-${crypto.randomUUID()}`;
+  window.localStorage.setItem(SESSION_KEY, next);
+  return next;
+}
 
 function normalizeToolParts(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => ({
@@ -35,8 +45,9 @@ function normalizeToolParts(messages: ChatMessage[]): ChatMessage[] {
  * 适配层（app-cuecue 模式）：把 useAgent + useAgentChat 收敛成一个归一化 runtime，
  * 对外只暴露 messages / 发送 / 状态，隐藏 SDK 细节。
  */
-export function useUniversalAgentChat() {
-  const agent = useAgent({ agent: AGENT, name: NAME });
+export function useUniversalAgentChat(name?: string) {
+  const agentName = useMemo(() => name ?? getStoredAgentName(), [name]);
+  const agent = useAgent({ agent: AGENT, name: agentName });
   const chat = useAgentChat({
     agent,
     resume: true, // 断线重连续流（resumable streaming）
