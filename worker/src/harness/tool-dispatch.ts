@@ -7,6 +7,14 @@ import { gate } from "./gating";
 export function buildToolSet(defs: ToolDef[], ctx: ToolCtx): ToolSet {
   const set: ToolSet = {};
   for (const def of defs) {
+    if (def.clientSide) {
+      set[def.id] = tool({
+        description: def.description,
+        inputSchema: def.inputSchema as never,
+      });
+      continue;
+    }
+
     set[def.id] = tool({
       description: def.description,
       // 动态构建工具：擦除 schema 泛型，避免 AI SDK 把输入推断成 never

@@ -187,6 +187,14 @@ apiRoutes.get("/runs", async (c) => {
   return c.json(results);
 });
 
+// 右侧产物区：列出 Agent 生成的报告 / HTML / JSON。
+apiRoutes.get("/artifacts", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, type, title, description, content, created_at FROM artifacts ORDER BY created_at DESC LIMIT 50",
+  ).all();
+  return c.json(results);
+});
+
 // ── 聊天记录 ──
 
 // 保存消息

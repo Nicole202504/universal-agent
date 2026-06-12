@@ -12,7 +12,7 @@ const NAME = "default";
  */
 export function useUniversalAgentChat() {
   const agent = useAgent({ agent: AGENT, name: NAME });
-  const { messages, sendMessage, status, isStreaming, stop, error } = useAgentChat({
+  const chat = useAgentChat({
     agent,
     resume: true, // 断线重连续流（resumable streaming）
   });
@@ -21,12 +21,12 @@ export function useUniversalAgentChat() {
     (text: string) => {
       const t = text.trim();
       if (!t) return;
-      void sendMessage({ text: t });
+      void chat.sendMessage({ text: t });
     },
-    [sendMessage],
+    [chat],
   );
 
-  return { messages, status, isStreaming, error, sendText, stop };
+  return { ...chat, sendText };
 }
 
 export type ChatRuntime = ReturnType<typeof useUniversalAgentChat>;

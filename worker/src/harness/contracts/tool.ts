@@ -14,5 +14,7 @@ export interface ToolDef {
   inputSchema: z.ZodTypeAny;
   /** 是否不可逆/有副作用 —— gating 的挂载点 */
   mutating?: boolean;
+  /** 前端执行工具：模型发起 tool call，UI 渲染并回传结果，Worker 不直接 execute */
+  clientSide?: boolean;
   run: (ctx: ToolCtx, args: Record<string, unknown>) => Promise<unknown>;
 }
