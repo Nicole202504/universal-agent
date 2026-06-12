@@ -4,7 +4,7 @@
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-05-21",
   // @cloudflare/think 需要 experimental flag
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "experimental"],
 
   // 前端构建产物（SPA）。Worker 处理 /api 与 /agents，其余路径 fallthrough 到 ASSETS。
   "assets": {
@@ -32,7 +32,7 @@
     {
       "binding": "DB",
       "database_name": "universal-agent-db",
-      "database_id": "908ef566-4354-448b-94e6-2decda86dcda",
+      "database_id": "REPLACE_WITH_YOUR_D1_ID",
       "migrations_dir": "migrations"
     }
   ]

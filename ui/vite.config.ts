@@ -9,8 +9,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/agents": { target: "http://localhost:8790", ws: true, changeOrigin: true },
-      "/api": { target: "http://localhost:8790", changeOrigin: true },
+      "/agents": { target: "http://localhost:8787", ws: true, changeOrigin: true },
+      "/api": { target: "http://localhost:8787", changeOrigin: true },
     },
   },
   build: { outDir: "dist", emptyOutDir: true },

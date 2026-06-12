@@ -1,8 +1,5 @@
-node_modules
-dist
-.wrangler
-.workbuddy
 .dev.vars
-*.log
-.DS_Store
-.pnpm-store
+node_modules/
+ui/dist/
+.wrangler/
+.understand-anything/

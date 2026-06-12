@@ -53,8 +53,8 @@ npx wrangler d1 create universal-agent-db
 pnpm run db:migrate            # 本地
 # pnpm run db:migrate:remote   # 远端
 
-# 3) 配置 OpenRouter key
-cp .dev.vars.example .dev.vars   # 填入 OPENROUTER_API_KEY
+# 3) 配置 DeepSeek key
+cp .dev.vars.example .dev.vars   # 填入 DEEPSEEK_API_KEY
 
 # 4) 启动（先 build 前端 → 并行起 worker(:8787) + vite(:5173)）
 pnpm run dev
@@ -91,5 +91,5 @@ agent loop（柔性轨）经 Agents chat 协议路由到 `UniversalAgent`（前�
 - `@cloudflare/think` **必须** `experimental` compat flag（已在 `wrangler.jsonc`）。
 - DO binding 名 = class 名 `UniversalAgent`（Agents SDK 路由约定）；前端 `useAgent({ agent: "UniversalAgent" })` 据此连。
 - `wrangler.jsonc` 的 `database_id` 是占位符，必须替换。
-- `getModel` 用 OpenRouter；换 Workers AI 则改 `runtime.ts` + 加 `ai` 绑定。
+- `getModel` 用 DeepSeek OpenAI-compatible API；换 Workers AI 则改 `runtime.ts` + 加 `ai` 绑定。
 - P0 未接 cron / Connector / 审批 —— 见 docs/08 路线 P1–P3。

@@ -7,7 +7,6 @@ export interface Env {
   HELLO_WORKFLOW: Workflow;
   ASSETS: Fetcher;
   DEEPSEEK_API_KEY: string;
-  VEDIC_API_URL?: string;
 }
 
 // ── Agent DO 持久状态 ──

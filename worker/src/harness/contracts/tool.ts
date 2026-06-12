@@ -12,6 +12,8 @@ export interface ToolDef {
   id: string;
   description: string;
   inputSchema: z.ZodTypeAny;
+  /** 前端交互工具：只把调用发到 UI，等待 UI 通过 addToolOutput 回填结果 */
+  clientSide?: boolean;
   /** 是否不可逆/有副作用 —— gating 的挂载点 */
   mutating?: boolean;
   run: (ctx: ToolCtx, args: Record<string, unknown>) => Promise<unknown>;

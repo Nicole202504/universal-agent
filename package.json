@@ -13,7 +13,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply universal-agent-db --remote"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.0",
+    "@ai-sdk/openai-compatible": "^2.0.49",
     "@cloudflare/think": "^0.7.2",
     "agents": "^0.13.2",
     "ai": "^6.0.190",
