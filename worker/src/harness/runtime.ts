@@ -88,7 +88,7 @@ export class UniversalAgent extends Think<Env, AgentState> {
   }
 
   getTools() {
-    const ctx: ToolCtx = { env: this.env };
+    const ctx: ToolCtx = { env: this.env, agentId: this.agentId() };
     return buildToolSet(this._tools, ctx);
   }
 }

@@ -55,12 +55,12 @@ export const helloTools: ToolDef[] = [
       const createdAt = Date.now();
 
       await ctx.env.DB.prepare(
-        "INSERT INTO artifacts (id, type, title, description, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO artifacts (id, agent_id, type, title, description, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
       )
-        .bind(id, type, title, description, content, createdAt)
+        .bind(id, ctx.agentId, type, title, description, content, createdAt)
         .run();
 
-      return { id, type, title, description, createdAt, panel: "artifacts" };
+      return { id, agentId: ctx.agentId, type, title, description, createdAt, panel: "artifacts" };
     },
   },
   {

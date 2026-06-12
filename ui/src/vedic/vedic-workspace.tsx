@@ -235,7 +235,7 @@ export function VedicWorkspace() {
 
   useEffect(() => {
     const refresh = async () => {
-      const response = await fetch("/api/artifacts");
+      const response = await fetch(`/api/artifacts?agent_id=${encodeURIComponent(runtime.agentName)}`);
       if (!response.ok) return;
       const rows = sortArtifacts(((await response.json()) as Artifact[])
         .filter(isVedicArtifact)
@@ -249,7 +249,7 @@ export function VedicWorkspace() {
     void refresh();
     const timer = window.setInterval(refresh, 2000);
     return () => window.clearInterval(timer);
-  }, [reportStartedAt]);
+  }, [reportStartedAt, runtime.agentName]);
 
   useEffect(() => {
     if (!reportStartedAt || isAgentRunning) return;

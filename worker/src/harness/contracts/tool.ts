@@ -5,6 +5,7 @@ import type { Env } from "../../types";
 // 将来某工具确需 agent 能力时，加一个窄能力接口（如 { startWorkflow }），而非整只 agent。
 export interface ToolCtx {
   env: Env;
+  agentId: string;
 }
 
 // Tool = 幂等原子动作（do-this）。一个工具 = 一个动作。

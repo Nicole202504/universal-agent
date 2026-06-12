@@ -14,7 +14,7 @@ type ChatMessage = {
   [key: string]: unknown;
 };
 
-function getStoredAgentName() {
+export function getUniversalAgentName() {
   if (typeof window === "undefined") return FALLBACK_NAME;
   const existing = window.localStorage.getItem(SESSION_KEY);
   if (existing) return existing;
@@ -46,7 +46,7 @@ function normalizeToolParts(messages: ChatMessage[]): ChatMessage[] {
  * 对外只暴露 messages / 发送 / 状态，隐藏 SDK 细节。
  */
 export function useUniversalAgentChat(name?: string) {
-  const agentName = useMemo(() => name ?? getStoredAgentName(), [name]);
+  const agentName = useMemo(() => name ?? getUniversalAgentName(), [name]);
   const agent = useAgent({ agent: AGENT, name: agentName });
   const chat = useAgentChat({
     agent,
@@ -65,7 +65,7 @@ export function useUniversalAgentChat(name?: string) {
     [chat],
   );
 
-  return { ...chat, sendText };
+  return { ...chat, sendText, agentName };
 }
 
 export type ChatRuntime = ReturnType<typeof useUniversalAgentChat>;

@@ -189,9 +189,11 @@ apiRoutes.get("/runs", async (c) => {
 
 // 右侧产物区：列出 Agent 生成的报告 / HTML / JSON。
 apiRoutes.get("/artifacts", async (c) => {
+  const agentId = c.req.query("agent_id")?.trim();
+  if (!agentId) return c.json([]);
   const { results } = await c.env.DB.prepare(
-    "SELECT id, type, title, description, content, created_at FROM artifacts ORDER BY created_at DESC LIMIT 50",
-  ).all();
+    "SELECT id, agent_id, type, title, description, content, created_at FROM artifacts WHERE agent_id = ?1 ORDER BY created_at DESC LIMIT 50",
+  ).bind(agentId).all();
   return c.json(results);
 });
 

@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { getUniversalAgentName } from "@/chat/use-universal-agent-chat";
 
 type Run = { id: string; kind: string; payload: string; created_at: number };
 
@@ -187,9 +188,10 @@ export function WorkspacePanel() {
   const [tab, setTab] = useState<"artifacts" | "runs">("artifacts");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const agentName = useMemo(() => getUniversalAgentName(), []);
 
   const refreshArtifacts = useCallback(() => {
-    fetch("/api/artifacts")
+    fetch(`/api/artifacts?agent_id=${encodeURIComponent(agentName)}`)
       .then((r) => r.json())
       .then((d) => {
         const next = d as Artifact[];
@@ -197,7 +199,7 @@ export function WorkspacePanel() {
         setSelectedId((current) => current ?? next[0]?.id ?? null);
       })
       .catch(() => {});
-  }, []);
+  }, [agentName]);
 
   useEffect(() => {
     refreshArtifacts();
