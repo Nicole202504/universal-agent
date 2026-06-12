@@ -90,7 +90,7 @@ const REPORT_SEQUENCE = [
   "职业专项报告",
   "感情专项报告",
   "Dasha 时间线与未来窗口",
-  "吠陀占星完整分析报告",
+  "完整人生报告",
 ];
 
 function defaultBirthForm(): BirthForm {
@@ -113,7 +113,19 @@ function formatGender(value: string) {
 
 function isVedicArtifact(artifact: Artifact) {
   const haystack = `${artifact.title} ${artifact.description}`;
-  return REPORT_SEQUENCE.some((title) => haystack.includes(title)) || haystack.includes("行星审计");
+  return (
+    REPORT_SEQUENCE.some((title) => haystack.includes(title)) ||
+    haystack.includes("行星审计") ||
+    haystack.includes("完整分析报告")
+  );
+}
+
+function sortArtifacts(rows: Artifact[]) {
+  return [...rows].sort((a, b) => {
+    if (a.type === "html" && b.type !== "html") return -1;
+    if (a.type !== "html" && b.type === "html") return 1;
+    return b.created_at - a.created_at;
+  });
 }
 
 export function VedicWorkspace() {
@@ -165,12 +177,14 @@ export function VedicWorkspace() {
     const refresh = async () => {
       const response = await fetch("/api/artifacts");
       if (!response.ok) return;
-      const rows = ((await response.json()) as Artifact[])
-        .filter((artifact) => artifact.type === "markdown")
+      const rows = sortArtifacts(((await response.json()) as Artifact[])
         .filter(isVedicArtifact)
-        .filter((artifact) => !reportStartedAt || artifact.created_at >= reportStartedAt - 5000);
+        .filter((artifact) => !reportStartedAt || artifact.created_at >= reportStartedAt - 5000));
       setArtifacts(rows);
-      setSelectedArtifactId((current) => current ?? rows[0]?.id ?? null);
+      setSelectedArtifactId((current) => {
+        const finalHtml = rows.find((artifact) => artifact.type === "html" && artifact.title.includes("完整人生报告"));
+        return finalHtml?.id ?? current ?? rows[0]?.id ?? null;
+      });
     };
     void refresh();
     const timer = window.setInterval(refresh, 2000);
@@ -257,7 +271,9 @@ export function VedicWorkspace() {
         "",
         "现在必须先调用 evaluate_validation。",
         "如果可以进入报告，必须依次加载 get_skill_instructions(\"vedic-core\"), get_skill_instructions(\"vedic-career\"), get_skill_instructions(\"vedic-love\")。",
-        "然后按分段产物模式生成报告：九颗行星逐颗审计，每颗完成后立即 create_artifact；再生成十二宫、分盘、职业、感情、Dasha；最后生成总报告 artifact。",
+        "然后按分段产物模式生成报告：九颗行星逐颗审计，每颗完成后立即 create_artifact；再生成十二宫、分盘、职业、感情、Dasha。",
+        "最后必须调用 generate_vedic_report，section=final_html，生成完整 HTML 人生总报告，并用 create_artifact(type=html,title=完整人生报告) 写入右侧产物区。",
+        "最终 HTML 不是技术审计拼接，必须把行星审计重写成通俗的人生画像、过去/未来节奏、人生 K 线图和分板块建议。",
         "不要让用户继续等待一个大回复。每个模块完成后都必须立即写入右侧 artifact。",
       ].join("\n"),
     );
@@ -323,7 +339,7 @@ export function VedicWorkspace() {
               index={3}
               title="报告生成"
               active={Boolean(reportStartedAt)}
-              done={artifacts.some((artifact) => artifact.title.includes("完整分析报告"))}
+              done={artifacts.some((artifact) => artifact.title.includes("完整人生报告"))}
             />
             <ProgressPanel
               started={Boolean(reportStartedAt)}
@@ -670,14 +686,23 @@ function ReportPanel({
               )}
             >
               <span className="block truncate text-xs font-medium">{artifact.title}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{artifact.description}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                {artifact.type.toUpperCase()} · {artifact.description}
+              </span>
             </button>
           ))}
         </div>
       )}
 
       <ScrollArea className="min-h-0 flex-1 bg-background">
-        {selected ? (
+        {selected?.type === "html" ? (
+          <iframe
+            title={selected.title}
+            sandbox="allow-scripts"
+            srcDoc={selected.content}
+            className="h-[calc(100dvh-120px)] min-h-[640px] w-full bg-white"
+          />
+        ) : selected ? (
           <article className="prose prose-sm max-w-none p-8 text-foreground prose-headings:scroll-mt-4 prose-table:text-sm">
             <Markdown remarkPlugins={[remarkGfm]}>{selected.content}</Markdown>
           </article>

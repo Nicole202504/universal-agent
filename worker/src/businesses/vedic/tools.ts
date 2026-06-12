@@ -25,6 +25,7 @@ const REPORT_SECTIONS = [
   "love",
   "dasha",
   "final_summary",
+  "final_html",
 ] as const;
 
 const PLANET_LABELS: Record<(typeof PLANETS)[number], string> = {
@@ -117,9 +118,50 @@ function buildReportInstruction(section: string, planet?: string): string {
     ].join("\n");
   }
 
+  if (section === "final_html") {
+    return [
+      "⚠️ 生成最终「完整人生报告」HTML 总报告，并立即调用 create_artifact。",
+      'artifact title="完整人生报告", type=html。',
+      "这个 HTML 是给普通用户看的最终交付物，不是技术审计稿。行星审计只是底层证据，必须重写成通俗、连贯、可阅读的人生说明。",
+      "",
+      "必须输出完整 standalone HTML document：包含 <!doctype html>、html、head、style、body。不要引用外部 CSS/JS。",
+      "视觉风格：干净、克制、专业，适合付费报告。使用清晰章节、浅色背景、表格/时间轴/进度条，不要花哨动画。",
+      "",
+      "总报告必须分为两大块：",
+      "",
+      "## 第一大块：整体人生画像",
+      "- 一句话总论：这个人的人生底色和主线。",
+      "- 底层性格与驱动力：用普通语言解释，不要堆专业名词。",
+      "- 过去验证：整合 5 条验前事和星盘证据，说明过去容易发生过什么，例如迁移、学业转向、家庭权威、经济压力、关系窗口。",
+      "- 未来节奏：未来 3-5 年的重要变化、机会、压力点和建议。",
+      "- 人生 K 线图：用 HTML/CSS 做一条时间轴或折线式节奏图，标注低谷、上升、转折、突破窗口。可以用 div/svg/css 实现，但必须在 HTML 内联。",
+      "",
+      "## 第二大块：通俗人生板块",
+      "这部分要把行星审计翻译成用户听得懂的主题章节，不要直接复制 P1-P12。",
+      "建议章节：",
+      "- 自我与行动力：把太阳/火星相关证据翻译成用户的自我感、执行方式、竞争方式。",
+      "- 情绪与安全感：把月亮相关证据翻译成情绪模式、家庭感、安全感。",
+      "- 思维与表达：把水星相关证据翻译成学习、表达、判断、商业思维。",
+      "- 成长与贵人：把木星相关证据翻译成学习、信念、贵人、长期扩张。",
+      "- 爱情与关系：把金星、7宫、D9、vedic-love 逻辑翻译成关系模式与时间窗口。",
+      "- 压力与长期主义：把土星相关证据翻译成责任、延迟满足、事业耐力。",
+      "- 欲望与突破：把 Rahu 翻译成野心、跨界、焦虑、非常规机会。",
+      "- 放下与内在成长：把 Ketu 翻译成抽离、灵性、天赋、无法强求之处。",
+      "- 事业、财富、家庭、迁移、健康管理、行动建议。",
+      "",
+      "写作限制：",
+      "- 每个专业术语出现时必须立刻用白话解释；能不用就不用。",
+      "- 不要写吓人的疾病预测，不要绝对化承诺。",
+      "- 不能把行星审计逐段粘贴过来。必须像一份人能读懂的人生报告。",
+      "- 可以在末尾放「技术依据」折叠区，简要列出 Lagna、Moon、Dasha、主要宫位/行星证据。",
+      "",
+      "完成 HTML 后必须调用 create_artifact({ type: 'html', title: '完整人生报告', description: '整体人生画像与未来节奏', content: 完整HTML })。",
+    ].join("\n");
+  }
+
   return [
     "⚠️ 生成完整报告时必须采用分段产物模式，不要一次性等待超长报告。",
-    "推荐顺序：九颗行星逐颗 planet_audit -> houses -> divisional -> career -> love -> dasha -> final_summary。",
+    "推荐顺序：九颗行星逐颗 planet_audit -> houses -> divisional -> career -> love -> dasha -> final_html。",
     "每完成一个模块必须立即调用 create_artifact，让右侧产物区即时展示。",
   ].join("\n");
 }
@@ -278,7 +320,7 @@ export const vedicTools: ToolDef[] = [
         hit_rate: `${hits}/${total}`,
         decision,
         next_step: hitRate >= 0.5
-          ? "Now produce the report in incremental artifacts. Call generate_vedic_report repeatedly: planet_audit for sun, moon, mars, mercury, jupiter, venus, saturn, rahu, ketu; then houses, divisional, career, love, dasha, and final_summary. After each tool result, call create_artifact immediately."
+          ? "Now produce the report in incremental artifacts. Call generate_vedic_report repeatedly: planet_audit for sun, moon, mars, mercury, jupiter, venus, saturn, rahu, ketu; then houses, divisional, career, love, dasha, and final_html. After each tool result, call create_artifact immediately."
           : "Suggest user to run time rectification with the vedic-rectifier skill.",
       };
     },
@@ -337,7 +379,7 @@ export const vedicTools: ToolDef[] = [
       timezone: z.string().optional().describe("IANA timezone, e.g. Asia/Shanghai"),
       validation_result: z.string().optional().describe("Pre-validation result text"),
       section: z.enum(REPORT_SECTIONS).optional().describe(
-        "Report section to generate. Use planet_audit for one planet at a time; then houses, divisional, career, love, dasha, final_summary.",
+        "Report section to generate. Use planet_audit for one planet at a time; then houses, divisional, career, love, dasha, final_html.",
       ),
       planet: z.enum(PLANETS).optional().describe("Required when section=planet_audit"),
     }),

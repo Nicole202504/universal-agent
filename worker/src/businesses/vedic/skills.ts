@@ -15,7 +15,7 @@ const FIRST_PHASE_FLOW = [
   "After chart calculation, always call `generate_validation_statements` and output exactly 5 pre-validation items when possible.",
   "Each validation item must be a yes/no selectable assertion. Do not ask the user for life events before validation.",
   "After the user answers the 5 items, call `evaluate_validation`.",
-  "If validation passes, produce the final report incrementally: one planet artifact at a time, then topical artifacts, then a final summary artifact.",
+  "If validation passes, produce the final report incrementally: one planet artifact at a time, then topical artifacts, then one final user-facing HTML life-report artifact.",
 ].join("\n");
 
 const INCREMENTAL_REPORT_FLOW = [
@@ -37,7 +37,8 @@ const INCREMENTAL_REPORT_FLOW = [
   "12. `section=career`",
   "13. `section=love`",
   "14. `section=dasha`",
-  "15. `section=final_summary`",
+  "15. `section=final_html`",
+  "The final HTML artifact is the user-facing paid report. It must rewrite the audit evidence into plain-language life themes, not paste technical planet audits.",
   "Chat replies between sections should be short progress notes; the full content belongs in artifacts.",
 ].join("\n");
 
@@ -114,6 +115,11 @@ export const vedicCoreSkill: SkillManifest = {
     "Writing style: 70% plain-language interpretation, 20% data tables, 10% technical notes.",
     "Do not reverse-engineer conclusions from the user's validation answers. Use validation only as time-confidence context.",
     INCREMENTAL_REPORT_FLOW,
+    "Final HTML report requirements:",
+    "- The final artifact must be `type=html`, title `完整人生报告`.",
+    "- It must have two big parts: overall life portrait, then plain-language life sections rewritten from the planet audits.",
+    "- Include past validation, future timing, and a life K-line / timeline visualization.",
+    "- Avoid heavy Sanskrit/Jyotish terminology in the user-facing sections. Use technical evidence only in a compact appendix.",
     "Required report structure:",
     "1. Validation result and time-confidence note.",
     "2. Birth chart summary: Lagna, Moon, Sun, Nakshatra, current Dasha, SAV total.",
