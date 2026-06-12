@@ -43,6 +43,7 @@ export const vedicTools: ToolDef[] = [
       birth_place: z.string().describe("City, Country, e.g. 'Fuzhou, China'"),
       latitude: z.number().describe("Latitude, e.g. 26.07 for Fuzhou"),
       longitude: z.number().describe("Longitude, e.g. 119.3 for Fuzhou"),
+      timezone: z.string().optional().describe("IANA timezone, e.g. Asia/Shanghai"),
       gender: z.string().optional().describe("male / female"),
     }),
     run: async (_ctx, args) => {
@@ -53,7 +54,7 @@ export const vedicTools: ToolDef[] = [
         year, month, day, hour, minute,
         lat: Number(args.latitude),
         lon: Number(args.longitude),
-        tz_str: "Asia/Shanghai",
+        tz_str: String(args.timezone || "Asia/Shanghai"),
       }, _ctx.env);
 
       return {
@@ -185,6 +186,7 @@ export const vedicTools: ToolDef[] = [
       birth_time: z.string().describe("Original birth time HH:MM"),
       latitude: z.number().describe("Latitude"),
       longitude: z.number().describe("Longitude"),
+      timezone: z.string().optional().describe("IANA timezone, e.g. Asia/Shanghai"),
       events: z.array(z.object({
         date: z.string().describe("Event date, preferably YYYY-MM or YYYY-MM-DD"),
         event: z.string().describe("Major life event description"),
@@ -200,7 +202,7 @@ export const vedicTools: ToolDef[] = [
         year, month, day, hour, minute,
         lat: Number(args.latitude),
         lon: Number(args.longitude),
-        tz_str: "Asia/Shanghai",
+        tz_str: String(args.timezone || "Asia/Shanghai"),
         events: args.events,
       }, _ctx.env);
 
@@ -224,6 +226,7 @@ export const vedicTools: ToolDef[] = [
       birth_time: z.string().describe("Original birth time HH:MM"),
       latitude: z.number().describe("Latitude"),
       longitude: z.number().describe("Longitude"),
+      timezone: z.string().optional().describe("IANA timezone, e.g. Asia/Shanghai"),
       validation_result: z.string().optional().describe("Pre-validation result text"),
     }),
     mutating: true,
@@ -235,7 +238,7 @@ export const vedicTools: ToolDef[] = [
         year, month, day, hour, minute,
         lat: Number(args.latitude),
         lon: Number(args.longitude),
-        tz_str: "Asia/Shanghai",
+        tz_str: String(args.timezone || "Asia/Shanghai"),
       }, _ctx.env);
 
       return {

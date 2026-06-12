@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useUniversalAgentChat } from "@/chat/use-universal-agent-chat";
+import { getMessageText } from "@/chat/model/message-helpers";
+import { ToolCardList } from "@/chat/tools/tool-card-list";
 
 type PlaceResult = {
   id: string;
@@ -25,30 +28,10 @@ type BirthForm = {
   timezone: string;
 };
 
-type ValidationItem = {
-  id: number;
-  area: string;
-  assertion: string;
-  evidence: string;
-};
-
 type ValidationResponse = {
   id: number;
   answer: "yes" | "no" | "other" | "";
   note: string;
-};
-
-type ChartResult = {
-  birth: BirthForm;
-  chart: Record<string, unknown>;
-  validation_items: ValidationItem[];
-};
-
-type FlowMessage = {
-  id: string;
-  role: "agent" | "user" | "system";
-  title?: string;
-  body: ReactNode;
 };
 
 const TIMEZONES = [
@@ -67,47 +50,20 @@ const TIMEZONES = [
   "UTC",
 ];
 
-const initialMessages: FlowMessage[] = [
-  {
-    id: "hello",
-    role: "agent",
-    title: "出生信息",
-    body: "先填写出生日期、时间和地点。我会把地点转成经纬度，随后计算星盘并生成 5 条验前事。",
-  },
-  {
-    id: "birth-form",
-    role: "system",
-    body: null,
-  },
-];
-
-function asText(value: unknown): string {
-  if (value == null) return "-";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  return JSON.stringify(value);
+function hasReport(text: string) {
+  return (
+    text.includes("吠陀占星完整分析报告") ||
+    (text.includes("九大行星") && text.includes("十二宫") && text.includes("事业")) ||
+    (text.length > 3500 && text.includes("报告"))
+  );
 }
 
-function chartSummary(chart: Record<string, unknown> | null) {
-  if (!chart) return [];
-  const lagna = chart.lagna as { sign?: string; degree?: number } | undefined;
-  const dasha = chart.current_dasha as { planet?: string; start?: string; end?: string } | undefined;
-  return [
-    ["上升", lagna?.sign ? `${lagna.sign} ${lagna.degree ?? ""}` : asText(chart.lagna)],
-    ["月亮", asText(chart.moon_sign)],
-    ["太阳", asText(chart.sun_sign)],
-    ["SAV", asText(chart.sav_total)],
-    ["当前大运", dasha?.planet ? `${dasha.planet} (${dasha.start} ~ ${dasha.end})` : "-"],
-  ];
-}
-
-function answerLabel(answer: ValidationResponse["answer"]) {
-  if (answer === "yes") return "是";
-  if (answer === "no") return "否";
-  if (answer === "other") return "其他";
-  return "未选择";
+function isToolPart(part: { type: string }) {
+  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
 }
 
 export function VedicWorkspace() {
+  const runtime = useUniversalAgentChat();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState<BirthForm>({
     birth_date: "",
@@ -120,21 +76,40 @@ export function VedicWorkspace() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [places, setPlaces] = useState<PlaceResult[]>([]);
   const [placeLoading, setPlaceLoading] = useState(false);
-  const [messages, setMessages] = useState<FlowMessage[]>(initialMessages);
-  const [chartResult, setChartResult] = useState<ChartResult | null>(null);
-  const [responses, setResponses] = useState<ValidationResponse[]>([]);
+  const [birthSubmitted, setBirthSubmitted] = useState(false);
+  const [responses, setResponses] = useState<ValidationResponse[]>(
+    Array.from({ length: 5 }, (_, index) => ({ id: index + 1, answer: "", note: "" })),
+  );
+  const [validationSubmitted, setValidationSubmitted] = useState(false);
   const [report, setReport] = useState("");
-  const [error, setError] = useState("");
-  const [phase, setPhase] = useState<"idle" | "chart" | "report">("idle");
 
   const canSubmitBirth =
     form.birth_date && form.birth_time && form.birth_place && form.latitude !== "" && form.longitude !== "";
-  const canGenerateReport = responses.length > 0 && responses.every((r) => r.answer);
-  const summaryRows = useMemo(() => chartSummary(chartResult?.chart ?? null), [chartResult]);
+  const canSubmitValidation = responses.every((response) => response.answer);
+
+  const latestAssistantText = useMemo(() => {
+    const assistant = [...runtime.messages].reverse().find((message) => message.role === "assistant");
+    return assistant ? getMessageText(assistant) : "";
+  }, [runtime.messages]);
+
+  const shouldShowValidationCard =
+    birthSubmitted &&
+    !validationSubmitted &&
+    (latestAssistantText.includes("请选择") ||
+      latestAssistantText.includes("是 / 否") ||
+      latestAssistantText.includes("验前事"));
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, chartResult, responses, phase]);
+  }, [runtime.messages, shouldShowValidationCard, runtime.isStreaming]);
+
+  useEffect(() => {
+    for (const message of runtime.messages) {
+      if (message.role !== "assistant") continue;
+      const text = getMessageText(message);
+      if (hasReport(text)) setReport(text);
+    }
+  }, [runtime.messages]);
 
   useEffect(() => {
     const q = placeQuery.trim();
@@ -154,10 +129,6 @@ export function VedicWorkspace() {
     return () => window.clearTimeout(timer);
   }, [placeQuery]);
 
-  function append(message: FlowMessage) {
-    setMessages((current) => [...current.filter((item) => item.id !== message.id), message]);
-  }
-
   function selectPlace(place: PlaceResult) {
     setForm((current) => ({
       ...current,
@@ -170,127 +141,51 @@ export function VedicWorkspace() {
     setPlaces([]);
   }
 
-  async function generateValidation() {
-    setError("");
-    setReport("");
-    setPhase("chart");
-    append({
-      id: `user-birth-${Date.now()}`,
-      role: "user",
-      title: "已提交出生信息",
-      body: (
-        <div className="space-y-1 text-sm">
-          <div>{form.birth_date} {form.birth_time}</div>
-          <div>{form.birth_place}</div>
-          <div className="text-muted-foreground">
-            {form.latitude}, {form.longitude} · {form.timezone}
-          </div>
-        </div>
-      ),
-    });
-    append({
-      id: "agent-calculating",
-      role: "agent",
-      title: "排盘中",
-      body: (
-        <span className="inline-flex items-center gap-2">
-          <Loader2 className="size-4 animate-spin" />
-          正在调用计算引擎，转换星盘数据并生成验前事。
-        </span>
-      ),
-    });
-    try {
-      const res = await fetch("/api/vedic/validation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "生成验前事失败");
-      setChartResult(data);
-      setResponses(
-        data.validation_items.map((item: ValidationItem) => ({
-          id: item.id,
-          answer: "",
-          note: "",
-        })),
-      );
-      append({
-        id: "agent-chart-ready",
-        role: "agent",
-        title: "星盘已计算",
-        body: "我已经得到上升、月亮、大运和关键宫位信号。下面先做 5 条验前事确认。",
-      });
-      append({
-        id: "validation-card",
-        role: "system",
-        body: null,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "生成验前事失败";
-      setError(message);
-      append({ id: `error-${Date.now()}`, role: "agent", title: "流程中断", body: message });
-    } finally {
-      setPhase("idle");
-    }
+  function submitBirth() {
+    const message = [
+      "请启动 Vedic Agent 主流程。",
+      "第一步必须加载 get_skill_instructions(\"vedic-reader\") 和 get_skill_instructions(\"vedic-calculator\")。",
+      "然后调用 collect_birth_data 排盘，再调用 generate_validation_statements 输出 5 条验前事。",
+      "验前事必须是用户可选择「是/否/其他」的判断题。不要生成最终报告。",
+      "",
+      "出生信息：",
+      `birth_date: ${form.birth_date}`,
+      `birth_time: ${form.birth_time}`,
+      `birth_place: ${form.birth_place}`,
+      `latitude: ${form.latitude}`,
+      `longitude: ${form.longitude}`,
+      `timezone: ${form.timezone}`,
+    ].join("\n");
+    setBirthSubmitted(true);
+    runtime.sendText(message);
   }
 
-  async function generateReport() {
-    if (!chartResult) return;
-    setError("");
-    setPhase("report");
-    append({
-      id: `user-validation-${Date.now()}`,
-      role: "user",
-      title: "已确认验前事",
-      body: (
-        <div className="space-y-1 text-sm">
-          {responses.map((response) => (
-            <div key={response.id}>
-              #{response.id} {answerLabel(response.answer)}
-              {response.note ? `：${response.note}` : ""}
-            </div>
-          ))}
-        </div>
-      ),
+  function submitValidation() {
+    const lines = responses.map((response) => {
+      const answer = response.answer === "yes" ? "是" : response.answer === "no" ? "否" : "其他";
+      return `${response.id}. ${answer}${response.note ? `，补充：${response.note}` : ""}`;
     });
-    append({
-      id: "agent-reporting",
-      role: "agent",
-      title: "生成报告",
-      body: (
-        <span className="inline-flex items-center gap-2">
-          <Loader2 className="size-4 animate-spin" />
-          正在按 vedic-core 结构生成完整报告，右侧产物区会显示结果。
-        </span>
-      ),
-    });
-    try {
-      const res = await fetch("/api/vedic/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          birth: form,
-          validation_items: chartResult.validation_items,
-          responses,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "生成报告失败");
-      setReport(data.report || "");
-      append({
-        id: "agent-report-ready",
-        role: "agent",
-        title: "报告已生成",
-        body: "完整报告已经放到右侧产物区。",
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "生成报告失败";
-      setError(message);
-      append({ id: `error-${Date.now()}`, role: "agent", title: "报告失败", body: message });
-    } finally {
-      setPhase("idle");
-    }
+    const message = [
+      "我的 5 条验前事确认结果如下：",
+      ...lines,
+      "",
+      "请现在调用 evaluate_validation。",
+      "如果可以进入报告，请必须依次加载：",
+      "get_skill_instructions(\"vedic-core\")",
+      "get_skill_instructions(\"vedic-career\")",
+      "get_skill_instructions(\"vedic-love\")",
+      "",
+      "然后生成一份全局完整报告。报告必须包含：",
+      "1. 每一颗行星的 P1-P12 审计。",
+      "2. 十二宫逐宫诊断。",
+      "3. D9/D10/D4/D5 分盘交叉分析。",
+      "4. 职业专项，使用 vedic-career 逻辑。",
+      "5. 感情专项，使用 vedic-love 逻辑。",
+      "6. Dasha 时间线和未来窗口。",
+      "请把完整报告作为一条 Markdown 输出，标题为 # 吠陀占星完整分析报告。",
+    ].join("\n");
+    setValidationSubmitted(true);
+    runtime.sendText(message);
   }
 
   function updateResponse(id: number, answer: ValidationResponse["answer"]) {
@@ -302,7 +197,7 @@ export function VedicWorkspace() {
   }
 
   return (
-    <div className="grid h-dvh w-screen grid-cols-[minmax(420px,520px)_1fr] overflow-hidden bg-background text-foreground">
+    <div className="grid h-dvh w-screen grid-cols-[minmax(420px,540px)_1fr] overflow-hidden bg-background text-foreground">
       <section className="flex min-h-0 flex-col border-r border-border bg-background">
         <header className="border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
@@ -313,72 +208,83 @@ export function VedicWorkspace() {
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-4 p-5">
-            {messages.map((message) => (
-              <FlowMessageView key={message.id} message={message}>
-                {message.id === "birth-form" && (
-                  <BirthFormCard
-                    form={form}
-                    setForm={setForm}
-                    placeQuery={placeQuery}
-                    setPlaceQuery={setPlaceQuery}
-                    places={places}
-                    placeLoading={placeLoading}
-                    selectPlace={selectPlace}
-                    canSubmit={Boolean(canSubmitBirth)}
-                    loading={phase === "chart"}
-                    onSubmit={generateValidation}
-                  />
-                )}
-                {message.id === "validation-card" && chartResult && (
-                  <ValidationCard
-                    items={chartResult.validation_items}
-                    responses={responses}
-                    updateResponse={updateResponse}
-                    updateNote={updateNote}
-                    canGenerateReport={canGenerateReport}
-                    loading={phase === "report"}
-                    onGenerateReport={generateReport}
-                    summaryRows={summaryRows}
-                  />
-                )}
-              </FlowMessageView>
-            ))}
-            {error && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-              </div>
+            <AgentBubble title="出生信息">
+              先填写出生日期、时间和地点。我会把这组结构化信息发给 Agent，由它自己加载 skill、排盘、生成验前事。
+            </AgentBubble>
+
+            {!birthSubmitted && (
+              <BirthFormCard
+                form={form}
+                setForm={setForm}
+                placeQuery={placeQuery}
+                setPlaceQuery={setPlaceQuery}
+                places={places}
+                placeLoading={placeLoading}
+                selectPlace={selectPlace}
+                canSubmit={Boolean(canSubmitBirth)}
+                loading={runtime.isStreaming}
+                onSubmit={submitBirth}
+              />
             )}
+
+            {runtime.messages.map((message, index) => (
+              <ChatMessage key={message.id ?? index} message={message} active={runtime.isStreaming && index === runtime.messages.length - 1} />
+            ))}
+
+            {shouldShowValidationCard && (
+              <ValidationCard
+                responses={responses}
+                updateResponse={updateResponse}
+                updateNote={updateNote}
+                canSubmit={canSubmitValidation}
+                loading={runtime.isStreaming}
+                onSubmit={submitValidation}
+              />
+            )}
+
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
       </section>
 
-      <ArtifactPanel report={report} />
+      <ArtifactPanel report={report} streaming={runtime.isStreaming && !report && validationSubmitted} />
     </div>
   );
 }
 
-function FlowMessageView({ message, children }: { message: FlowMessage; children?: ReactNode }) {
-  if (message.role === "system") return <>{children ?? message.body}</>;
-  const isUser = message.role === "user";
+function AgentBubble({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[92%] rounded-md border px-3 py-2 text-sm shadow-sm",
-          isUser
-            ? "border-primary/25 bg-primary text-primary-foreground"
-            : "border-border bg-card text-card-foreground",
-        )}
-      >
-        {message.title && (
-          <div className={cn("mb-1 text-xs font-semibold", isUser ? "text-primary-foreground/80" : "text-muted-foreground")}>
-            {message.title}
-          </div>
-        )}
-        <div className="leading-6">{message.body}</div>
+    <div className="flex justify-start">
+      <div className="max-w-[92%] rounded-md border border-border bg-card px-3 py-2 text-sm shadow-sm">
+        {title && <div className="mb-1 text-xs font-semibold text-muted-foreground">{title}</div>}
+        <div className="leading-6">{children}</div>
       </div>
     </div>
+  );
+}
+
+function ChatMessage({ message, active }: { message: { role: string; parts: Array<{ type: string }> }; active: boolean }) {
+  const text = getMessageText(message as Parameters<typeof getMessageText>[0]);
+  const toolParts = message.parts.filter(isToolPart) as never[];
+  if (message.role === "user") {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[86%] whitespace-pre-wrap rounded-md bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground">
+          {text}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <AgentBubble title="Agent">
+      {text && (
+        <div className="prose prose-sm max-w-none text-foreground prose-p:my-1 prose-pre:my-2 prose-table:text-xs">
+          <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+          {active && <span className="ml-0.5 inline-block animate-pulse">▍</span>}
+        </div>
+      )}
+      {toolParts.length > 0 && <ToolCardList toolParts={toolParts} />}
+    </AgentBubble>
   );
 }
 
@@ -409,7 +315,7 @@ function BirthFormCard({
     <div className="rounded-md border border-border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Sparkles className="size-4 text-primary" />
-        出生信息表单
+        Agent 表单输入
       </div>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
@@ -498,7 +404,7 @@ function BirthFormCard({
 
         <Button onClick={onSubmit} disabled={!canSubmit || loading} className="w-full">
           {loading ? <Loader2 className="animate-spin" /> : <Search />}
-          提交给 Agent
+          发送给 Agent
         </Button>
       </div>
     </div>
@@ -506,94 +412,70 @@ function BirthFormCard({
 }
 
 function ValidationCard({
-  items,
   responses,
   updateResponse,
   updateNote,
-  canGenerateReport,
+  canSubmit,
   loading,
-  onGenerateReport,
-  summaryRows,
+  onSubmit,
 }: {
-  items: ValidationItem[];
   responses: ValidationResponse[];
   updateResponse: (id: number, answer: ValidationResponse["answer"]) => void;
   updateNote: (id: number, note: string) => void;
-  canGenerateReport: boolean;
+  canSubmit: boolean;
   loading: boolean;
-  onGenerateReport: () => void;
-  summaryRows: string[][];
+  onSubmit: () => void;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-border bg-card">
-        <div className="border-b border-border px-3 py-2 text-sm font-semibold">星盘摘要</div>
-        <div className="divide-y divide-border text-sm">
-          {summaryRows.map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[88px_1fr] px-3 py-2">
-              <span className="text-muted-foreground">{label}</span>
-              <span>{value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
+    <div className="rounded-md border border-border bg-card p-4 shadow-sm">
+      <div className="mb-3 text-sm font-semibold">验前事确认</div>
       <div className="space-y-3">
-        {items.map((item) => {
-          const response = responses.find((r) => r.id === item.id);
-          return (
-            <div key={item.id} className="rounded-md border border-border bg-card p-3 shadow-sm">
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="rounded bg-muted px-1.5 py-0.5">{item.area}</span>
-                <span>#{item.id}</span>
-              </div>
-              <p className="text-sm font-medium leading-6">{item.assertion}</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.evidence}</p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <Button
-                  variant={response?.answer === "yes" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => updateResponse(item.id, "yes")}
-                >
-                  <Check /> 是
-                </Button>
-                <Button
-                  variant={response?.answer === "no" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => updateResponse(item.id, "no")}
-                >
-                  <X /> 否
-                </Button>
-                <Button
-                  variant={response?.answer === "other" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => updateResponse(item.id, "other")}
-                >
-                  其他
-                </Button>
-              </div>
-              {response?.answer === "other" && (
-                <Textarea
-                  value={response.note}
-                  onChange={(e) => updateNote(item.id, e.target.value)}
-                  placeholder="补充说明"
-                  className="mt-2 rounded-md border border-input bg-background"
-                />
-              )}
+        {responses.map((response) => (
+          <div key={response.id} className="rounded-md border border-border bg-background p-3">
+            <div className="mb-2 text-sm font-medium">第 {response.id} 条</div>
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant={response.answer === "yes" ? "default" : "outline"}
+                size="sm"
+                onClick={() => updateResponse(response.id, "yes")}
+              >
+                <Check /> 是
+              </Button>
+              <Button
+                variant={response.answer === "no" ? "default" : "outline"}
+                size="sm"
+                onClick={() => updateResponse(response.id, "no")}
+              >
+                <X /> 否
+              </Button>
+              <Button
+                variant={response.answer === "other" ? "default" : "outline"}
+                size="sm"
+                onClick={() => updateResponse(response.id, "other")}
+              >
+                其他
+              </Button>
             </div>
-          );
-        })}
+            {response.answer === "other" && (
+              <Textarea
+                value={response.note}
+                onChange={(e) => updateNote(response.id, e.target.value)}
+                placeholder="补充说明"
+                className="mt-2 rounded-md border border-input bg-background"
+              />
+            )}
+          </div>
+        ))}
       </div>
-
-      <Button onClick={onGenerateReport} disabled={!canGenerateReport || loading} className="w-full">
+      <Button onClick={onSubmit} disabled={!canSubmit || loading} className="mt-3 w-full">
         {loading ? <Loader2 className="animate-spin" /> : <FileText />}
-        生成右侧报告
+        发送确认结果给 Agent
       </Button>
     </div>
   );
 }
 
-function ArtifactPanel({ report }: { report: string }) {
+function ArtifactPanel({ report, streaming }: { report: string; streaming: boolean }) {
   return (
     <section className="flex min-h-0 flex-col bg-card">
       <header className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -602,7 +484,7 @@ function ArtifactPanel({ report }: { report: string }) {
           <h2 className="text-base font-semibold">报告产物</h2>
         </div>
         <span className={cn("text-xs", report ? "text-primary" : "text-muted-foreground")}>
-          {report ? "已生成" : "等待生成"}
+          {report ? "已生成" : streaming ? "生成中" : "等待生成"}
         </span>
       </header>
       <ScrollArea className="min-h-0 flex-1">
@@ -612,7 +494,7 @@ function ArtifactPanel({ report }: { report: string }) {
           </article>
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            左侧 Agent 完成出生信息、验前事确认后，完整报告会显示在这里。
+            Agent 完成 skill 加载与完整报告输出后，这里会同步显示报告产物。
           </div>
         )}
       </ScrollArea>

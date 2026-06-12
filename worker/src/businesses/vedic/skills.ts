@@ -1,4 +1,12 @@
 import type { SkillManifest } from "../../types";
+import {
+  VEDIC_CALCULATOR_INSTRUCTIONS,
+  VEDIC_CAREER_INSTRUCTIONS,
+  VEDIC_CORE_INSTRUCTIONS,
+  VEDIC_LOVE_INSTRUCTIONS,
+  VEDIC_READER_INSTRUCTIONS,
+  VEDIC_RECTIFIER_INSTRUCTIONS,
+} from "./full-skill-content";
 
 const FIRST_PHASE_FLOW = [
   "# Phase 1 product flow",
@@ -15,6 +23,8 @@ export const vedicReaderSkill: SkillManifest = {
   description:
     "Vedic chart intake router. Trigger for birth data, chart reading, Jyotish, Vedic astrology, or starting a chart analysis.",
   instructions: [
+    VEDIC_READER_INSTRUCTIONS,
+    "",
     "# Vedic Chart Reader",
     FIRST_PHASE_FLOW,
     "",
@@ -23,6 +33,7 @@ export const vedicReaderSkill: SkillManifest = {
     "If the user provides birth data, do not ask for PDF/screenshots. Use the calculator path.",
     "If data is incomplete, ask only for the missing birth field. Do not ask open-ended life-history questions.",
     "Once birth data is complete, call `collect_birth_data` immediately.",
+    "For the final global report, the agent must load `vedic-core`, `vedic-career`, and `vedic-love` before producing the final answer.",
   ].join("\n"),
   tool_ids: ["collect_birth_data", "generate_validation_statements", "evaluate_validation", "generate_vedic_report"],
   workflow: null,
@@ -33,6 +44,8 @@ export const vedicCalculatorSkill: SkillManifest = {
   description:
     "Calculate a complete Vedic chart from birth date, time, place, latitude, and longitude using the pysweph/PyJHora engine.",
   instructions: [
+    VEDIC_CALCULATOR_INSTRUCTIONS,
+    "",
     "# Vedic Calculator",
     FIRST_PHASE_FLOW,
     "",
@@ -50,6 +63,8 @@ export const vedicRectifierSkill: SkillManifest = {
   description:
     "Birth time rectification from major life events and Dasha matching. Use only when validation is weak or user asks for time correction.",
   instructions: [
+    VEDIC_RECTIFIER_INSTRUCTIONS,
+    "",
     "# Vedic Birth Time Rectifier",
     "This is not the phase-1 default path. Use it only after weak validation or explicit time-correction intent.",
     "Collect 5 major dated life events only when rectification is needed.",
@@ -65,6 +80,8 @@ export const vedicCoreSkill: SkillManifest = {
   description:
     "Full Vedic core analysis: P1-P12 planet audit, divisional cross-checks, house diagnosis, life areas, Dasha timing, and report generation.",
   instructions: [
+    VEDIC_CORE_INSTRUCTIONS,
+    "",
     "# Vedic Core Analysis",
     FIRST_PHASE_FLOW,
     "",
@@ -82,6 +99,7 @@ export const vedicCoreSkill: SkillManifest = {
     "7. Yogas and special signals.",
     "8. Ten life areas: personality, wealth, career, love, health, education, family, social network, spirituality, strategic advantage.",
     "9. Action suggestions and technical appendix.",
+    "Before final report synthesis, also load `vedic-career` and `vedic-love` and include those analyses.",
   ].join("\n"),
   tool_ids: ["generate_vedic_report"],
   workflow: null,
@@ -92,6 +110,8 @@ export const vedicCareerSkill: SkillManifest = {
   description:
     "Career direction and timing analysis from a calculated Vedic chart. Use after the core report or when user explicitly asks career questions.",
   instructions: [
+    VEDIC_CAREER_INSTRUCTIONS,
+    "",
     "# Vedic Career Analysis",
     "Phase 1 does not route here before validation and the full report.",
     "For career analysis, focus on L10, 10th house, AmK, D10, Saturn, Mercury, Sun, current Dasha, and income houses.",
@@ -107,6 +127,8 @@ export const vedicLoveSkill: SkillManifest = {
   description:
     "Relationship pattern and love timing analysis from a calculated Vedic chart. Use after the core report or for explicit love/relationship questions.",
   instructions: [
+    VEDIC_LOVE_INSTRUCTIONS,
+    "",
     "# Vedic Love Timing Analysis",
     "Phase 1 does not route here before validation and the full report.",
     "For love analysis, focus on 5th house, 7th house, Venus, Jupiter, DK/PK, UL, D9, and relationship Dasha windows.",
