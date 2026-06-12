@@ -5,7 +5,11 @@ import type { ToolDef } from "./contracts/tool";
 export async function loadAgentConfig(db: D1Database, id: string): Promise<AgentConfig | null> {
   try {
     const row = await db.prepare("SELECT * FROM agent_config WHERE id = ?1").bind(id).first<AgentConfig>();
-    return row ?? null;
+    if (row) return row;
+    if (id !== "default") {
+      return await db.prepare("SELECT * FROM agent_config WHERE id = 'default'").first<AgentConfig>();
+    }
+    return null;
   } catch {
     // 表未建 / DB 未就绪 —— 交给上层 fallback（hello-world 仍可全开跑）
     return null;
