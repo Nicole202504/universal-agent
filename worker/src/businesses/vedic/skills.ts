@@ -15,7 +15,30 @@ const FIRST_PHASE_FLOW = [
   "After chart calculation, always call `generate_validation_statements` and output exactly 5 pre-validation items when possible.",
   "Each validation item must be a yes/no selectable assertion. Do not ask the user for life events before validation.",
   "After the user answers the 5 items, call `evaluate_validation`.",
-  "If validation passes, call `generate_vedic_report` and produce a comprehensive report.",
+  "If validation passes, produce the final report incrementally: one planet artifact at a time, then topical artifacts, then a final summary artifact.",
+].join("\n");
+
+const INCREMENTAL_REPORT_FLOW = [
+  "# Incremental final-report flow",
+  "Do not generate the paid final report as one long hidden response.",
+  "After validation passes, load `vedic-core`, `vedic-career`, and `vedic-love` first.",
+  "Then call `generate_vedic_report` repeatedly and call `create_artifact` immediately after every section:",
+  "1. `section=planet_audit, planet=sun`",
+  "2. `section=planet_audit, planet=moon`",
+  "3. `section=planet_audit, planet=mars`",
+  "4. `section=planet_audit, planet=mercury`",
+  "5. `section=planet_audit, planet=jupiter`",
+  "6. `section=planet_audit, planet=venus`",
+  "7. `section=planet_audit, planet=saturn`",
+  "8. `section=planet_audit, planet=rahu`",
+  "9. `section=planet_audit, planet=ketu`",
+  "10. `section=houses`",
+  "11. `section=divisional`",
+  "12. `section=career`",
+  "13. `section=love`",
+  "14. `section=dasha`",
+  "15. `section=final_summary`",
+  "Chat replies between sections should be short progress notes; the full content belongs in artifacts.",
 ].join("\n");
 
 export const vedicReaderSkill: SkillManifest = {
@@ -34,6 +57,7 @@ export const vedicReaderSkill: SkillManifest = {
     "If data is incomplete, ask only for the missing birth field. Do not ask open-ended life-history questions.",
     "Once birth data is complete, call `collect_birth_data` immediately.",
     "For the final global report, the agent must load `vedic-core`, `vedic-career`, and `vedic-love` before producing the final answer.",
+    INCREMENTAL_REPORT_FLOW,
   ].join("\n"),
   tool_ids: ["collect_birth_data", "generate_validation_statements", "evaluate_validation", "generate_vedic_report"],
   workflow: null,
@@ -89,6 +113,7 @@ export const vedicCoreSkill: SkillManifest = {
     "The final report must be comprehensive, not a short chat answer.",
     "Writing style: 70% plain-language interpretation, 20% data tables, 10% technical notes.",
     "Do not reverse-engineer conclusions from the user's validation answers. Use validation only as time-confidence context.",
+    INCREMENTAL_REPORT_FLOW,
     "Required report structure:",
     "1. Validation result and time-confidence note.",
     "2. Birth chart summary: Lagna, Moon, Sun, Nakshatra, current Dasha, SAV total.",

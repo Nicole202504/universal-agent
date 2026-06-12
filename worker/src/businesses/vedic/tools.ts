@@ -15,6 +15,114 @@ import type { ToolDef } from "../../harness/contracts/tool";
 //               POST /api/rectify     — 时间校准
 
 const API_BASE = "http://localhost:8900";
+const PLANETS = ["sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn", "rahu", "ketu"] as const;
+const REPORT_SECTIONS = [
+  "full",
+  "planet_audit",
+  "houses",
+  "divisional",
+  "career",
+  "love",
+  "dasha",
+  "final_summary",
+] as const;
+
+const PLANET_LABELS: Record<(typeof PLANETS)[number], string> = {
+  sun: "太阳",
+  moon: "月亮",
+  mars: "火星",
+  mercury: "水星",
+  jupiter: "木星",
+  venus: "金星",
+  saturn: "土星",
+  rahu: "Rahu",
+  ketu: "Ketu",
+};
+
+function buildReportInstruction(section: string, planet?: string): string {
+  if (section === "planet_audit") {
+    const label = PLANET_LABELS[planet as keyof typeof PLANET_LABELS] ?? planet ?? "指定行星";
+    return [
+      `⚠️ 只生成「${label}行星审计」这一份 Markdown 子报告。`,
+      "不要等待其他行星，不要合并总报告。",
+      "完成这一颗行星后，必须立即调用 create_artifact：",
+      `- type=markdown`,
+      `- title="${label}行星审计"`,
+      `- description="P1-P12 行星审计"`,
+      "- content=完整 Markdown 子报告",
+      "",
+      "子报告结构：",
+      `# ${label}行星审计`,
+      "## 1. 一句话总断",
+      "## 2. 基础落点：星座 / 宫位 / Nakshatra / 度数",
+      "## 3. P1-P12 审计",
+      "必须覆盖 P1-P12，每一项至少 2-4 句，不能只列标题。",
+      "## 4. 与宫主、相位、燃烧/逆行/尊贵度的交叉证据",
+      "## 5. 对人格、家庭、事业、感情、财富、精神性的具体影响",
+      "## 6. 当前 Dasha/Antardasha 如何激活这颗行星",
+      "## 7. 可验证事件与未来窗口",
+      "",
+      "写作要求：像付费交付物，先讲人话，再给证据。不要短答。",
+    ].join("\n");
+  }
+
+  if (section === "houses") {
+    return [
+      "⚠️ 只生成「十二宫逐宫诊断」Markdown 子报告，完成后立即 create_artifact。",
+      'artifact title="十二宫逐宫诊断", type=markdown。',
+      "必须覆盖 1-12 宫：每宫写宫主、落宫、宫内行星、SAV/强弱、人生表现、时间触发。",
+    ].join("\n");
+  }
+
+  if (section === "divisional") {
+    return [
+      "⚠️ 只生成「分盘交叉分析」Markdown 子报告，完成后立即 create_artifact。",
+      'artifact title="D9/D10/D4/D5 分盘交叉分析", type=markdown。',
+      "重点：D9 婚姻与内在 dharma，D10 职业，D4 居住/资产，D5 才华/创造/子女。没有的数据必须标注 unavailable，不可编造。",
+    ].join("\n");
+  }
+
+  if (section === "career") {
+    return [
+      "⚠️ 只生成「职业专项报告」Markdown 子报告，完成后立即 create_artifact。",
+      'artifact title="职业专项报告", type=markdown。',
+      "必须使用 vedic-career 逻辑：10宫、10宫主、AmK、D10、Saturn、Mercury、Sun、2/6/10/11宫、Dasha 时间窗口。",
+      "输出：职业底层驱动力、适合赛道、不适合赛道、赚钱模式、组织/创业倾向、未来3年窗口。",
+    ].join("\n");
+  }
+
+  if (section === "love") {
+    return [
+      "⚠️ 只生成「感情专项报告」Markdown 子报告，完成后立即 create_artifact。",
+      'artifact title="感情专项报告", type=markdown。',
+      "必须使用 vedic-love 逻辑：5宫、7宫、Venus、Jupiter、DK/PK、UL、D9、感情 Dasha 窗口。",
+      "输出：恋爱模式、伴侣画像、关系课题、适合关系节奏、未来时间窗口。",
+    ].join("\n");
+  }
+
+  if (section === "dasha") {
+    return [
+      "⚠️ 只生成「Dasha 时间线与未来窗口」Markdown 子报告，完成后立即 create_artifact。",
+      'artifact title="Dasha 时间线与未来窗口", type=markdown。',
+      "必须包含：当前大运/小运解释、历史验证、未来3年逐段窗口、行动建议。",
+    ].join("\n");
+  }
+
+  if (section === "final_summary") {
+    return [
+      "⚠️ 生成最终「吠陀占星完整分析报告」总汇总 Markdown，并立即 create_artifact。",
+      'artifact title="吠陀占星完整分析报告", type=markdown。',
+      "这个总报告要整合前面已生成的各个子报告，不要重新拖很久写九颗行星全文；用摘要+关键证据+结论承接。",
+      "必须包含：验前事结果、本命盘基础、九大行星摘要、十二宫摘要、分盘、职业、感情、Dasha、行动建议、技术附录。",
+    ].join("\n");
+  }
+
+  return [
+    "⚠️ 生成完整报告时必须采用分段产物模式，不要一次性等待超长报告。",
+    "推荐顺序：九颗行星逐颗 planet_audit -> houses -> divisional -> career -> love -> dasha -> final_summary。",
+    "每完成一个模块必须立即调用 create_artifact，让右侧产物区即时展示。",
+  ].join("\n");
+}
 
 async function apiCall(path: string, body: Record<string, unknown>, env?: { VEDIC_API_URL?: string }): Promise<Record<string, unknown>> {
   const base = env?.VEDIC_API_URL || API_BASE;
@@ -170,7 +278,7 @@ export const vedicTools: ToolDef[] = [
         hit_rate: `${hits}/${total}`,
         decision,
         next_step: hitRate >= 0.5
-          ? "Now call generate_vedic_report to produce the full report."
+          ? "Now produce the report in incremental artifacts. Call generate_vedic_report repeatedly: planet_audit for sun, moon, mars, mercury, jupiter, venus, saturn, rahu, ketu; then houses, divisional, career, love, dasha, and final_summary. After each tool result, call create_artifact immediately."
           : "Suggest user to run time rectification with the vedic-rectifier skill.",
       };
     },
@@ -219,8 +327,8 @@ export const vedicTools: ToolDef[] = [
   {
     id: "generate_vedic_report",
     description:
-      "Call the API to get full chart data, then generate a LONG, DETAILED 9-section Vedic report. " +
-      "Must be 3000+ words covering all planets, houses, dashas, yogas, and life areas.",
+      "Call the API to get full chart data for a Vedic report section. " +
+      "Use section=planet_audit with one planet at a time for incremental report artifacts, then houses/divisional/career/love/dasha/final_summary.",
     inputSchema: z.object({
       birth_date: z.string().describe("Original birth date YYYY-MM-DD"),
       birth_time: z.string().describe("Original birth time HH:MM"),
@@ -228,6 +336,10 @@ export const vedicTools: ToolDef[] = [
       longitude: z.number().describe("Longitude"),
       timezone: z.string().optional().describe("IANA timezone, e.g. Asia/Shanghai"),
       validation_result: z.string().optional().describe("Pre-validation result text"),
+      section: z.enum(REPORT_SECTIONS).optional().describe(
+        "Report section to generate. Use planet_audit for one planet at a time; then houses, divisional, career, love, dasha, final_summary.",
+      ),
+      planet: z.enum(PLANETS).optional().describe("Required when section=planet_audit"),
     }),
     mutating: true,
     run: async (_ctx, args) => {
@@ -241,50 +353,15 @@ export const vedicTools: ToolDef[] = [
         tz_str: String(args.timezone || "Asia/Shanghai"),
       }, _ctx.env);
 
+      const section = String(args.section || "full");
+      const planet = args.planet == null ? undefined : String(args.planet);
+
       return {
-        status: "full_data_ready",
+        status: "report_section_data_ready",
+        section,
+        planet,
         chart: result,
-        instruction: [
-          "⚠️ 生成一份**完整、长篇**的吠陀占星报告（Markdown）。",
-          "这是用户通过验前事后的完整产品，不是简短总结。",
-          "必须按 vedic-core 逻辑写：先人话解释，再给证据。不要只罗列参数。",
-          "输出比例：70%通俗解读 + 20%数据表格 + 10%技术注释。",
-          "",
-          "# 吠陀占星完整分析报告",
-          "",
-          "## 一、验前事验证结果",
-          "- 列出5条推断及反馈",
-          "- 标注时间精度",
-          "",
-          "## 二、本命盘基础信息",
-          "- Lagna、Moon、Sun、Nakshatra",
-          "- SAV=337 确认数学正确",
-          "",
-          "## 三、九大行星逐一深度分析",
-          "每颗行星至少2段：落宫/星座/Nakshatra/尊贵度/P1角色/相位/燃烧或逆行/人生影响",
-          "",
-          "## 四、十二宫位全覆盖诊断",
-          "1-12宫逐宫：宫主+行星+SAV+当前Dasha影响。每宫都要有白话解释。",
-          "",
-          "## 五、Dasha 大运完整时间线",
-          "当前大运/小运 + 未来3年切换表 + 历史事件验证",
-          "",
-          "## 六、关键 Yoga 格局",
-          "Raja/Dhana/Dharma-Karma Yoga 等",
-          "",
-          "## 七、十大人生板块总结",
-          "1人格 2财富 3事业 4感情 5健康 6学业 7家庭 8社交 9灵性 10赛道优势",
-          "",
-          "## 八、时间窗口与行动建议",
-          "短期/中期/长期",
-          "",
-          "## 九、技术附录 + 免责声明",
-          "- Dasha速查表 / 尊贵度总表 / SAV分布",
-          "- 「基于pysweph+PyJHora真实计算，仅供个人参考」",
-          "",
-          "⚠️ 硬性要求：总长至少5000字。每个章节都必须展开，不允许用一句话带过。",
-          "使用Markdown表格、加粗、列表等格式增强可读性。不确定处标注「待核实」。",
-        ].join("\n"),
+        instruction: buildReportInstruction(section, planet),
       };
     },
   },
