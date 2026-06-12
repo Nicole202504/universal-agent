@@ -6,12 +6,13 @@ import type { ToolDef } from "../../harness/contracts/tool";
 //   正确流程：
 //     1. 用户给出生数据 → API 排盘
 //     2. 系统基于星盘生成 5 条断言式验前事推断
-//     3. 用户逐条回复「准/不准/部分准」
+//     3. 用户逐条选择「是/否」（兼容 准/不准）
 //     4. 命中率高（≥4/5）→ 信任建立 → 付费生成报告
 //     5. 命中率低（≤2/5）→ 建议时间校准
 //
 //   Python API: POST /api/prevalidate  — 排盘 + 生成验前事
-//               POST /api/report      — 生成完整报告
+//               POST /api/full-report — 生成完整报告数据
+//               POST /api/rectify     — 时间校准
 
 const API_BASE = "http://localhost:8900";
 
@@ -69,8 +70,8 @@ export const vedicTools: ToolDef[] = [
         chart_data_for_llm: result.chart_data_for_llm,
         next_step:
           "⚠️ REQUIRED: Now call generate_validation_statements. " +
-          "Use chart_data_for_llm to craft 5 assertive validation statements. " +
-          "This is the trust-building / paid gateway step.",
+          "Use chart_data_for_llm to craft 5 assertive yes/no validation statements. " +
+          "This is the trust-building / paid gateway step. Do not write the full report yet.",
       };
     },
   },
@@ -80,8 +81,8 @@ export const vedicTools: ToolDef[] = [
     id: "generate_validation_statements",
     description:
       "CRITICAL: Generate 5 assertive pre-validation statements based on chart analysis. " +
-      "These are NOT questions — they are confident assertions about the user's life " +
-      "that the user can instantly verify with '准/不准/部分准'. " +
+      "These are NOT open questions — they are confident assertions about the user's life " +
+      "that the user can instantly verify by choosing yes or no. " +
       "This step builds trust and serves as the paid consultation gateway.",
     inputSchema: z.object({
       lagna_sign: z.string().describe("Ascendant sign, e.g. 'Scorpio'"),
@@ -94,32 +95,39 @@ export const vedicTools: ToolDef[] = [
       status: "prepare_validation",
       context: `上升: ${args.lagna_sign}, 月亮: ${args.moon_sign}`,
       instruction: [
-        "⚠️ 立即在聊天框输出5条断言式推断。禁止提问！禁止让用户填表！",
+        "⚠️ 立即在聊天框输出5条断言式验前事。禁止提问！禁止让用户填表！禁止生成报告！",
+        "每条必须是用户可直接选择「是 / 否」的判断题。",
+        "目标是高命中付费闸口：宁可少用弱信号，也不要写泛泛性格判断。",
         "",
         "输出格式（严格照抄）：",
         "```",
         "在进入完整分析之前，先验证几个时间锚点——",
         "",
-        "**1.** [一句陈述式推断。例：您离开过家乡，目前不在出生地生活。]",
+        "**1.** [一句具体陈述。例：您离开过家乡，目前不在出生地长期生活。]",
         "> 推导：[行星+宫位+状态]",
+        "> 请选择：是 / 否",
         "",
-        "**2.** [一句陈述式推断。例：学业过程中有过吃力阶段。]",
+        "**2.** [一句具体陈述。例：您的学业过程中有过一段明显吃力或转向阶段。]",
         "> 推导：[行星+宫位+状态]",
+        "> 请选择：是 / 否",
         "",
         "**3.** 在 20XX-20XX 年期间，您[具体事件]。",
         "> 推导：[小运行星+宫主+窗口]",
+        "> 请选择：是 / 否",
         "",
         "**4.** [一句陈述式推断。]",
         "> 推导：[来源]",
+        "> 请选择：是 / 否",
         "",
         "**5.** [一句陈述式推断。]",
         "> 推导：[来源]",
+        "> 请选择：是 / 否",
         "",
-        "请逐条回复：**准 / 不准 / 部分准**",
+        "请逐条选择：**是 / 否**",
         "```",
-        "禁止做的事：不说「请提供」、不说「您哪年」、不输出表格。",
-        "推断来源：优先用 Sun+9宫（父亲）、4宫主+Rahu（搬迁）、5宫主+Jupiter（学历）、Ketu落宫、Antardasha窗口。",
-        "不够5条就说3-4条，不硬凑。",
+        "禁止做的事：不说「请提供」、不说「您哪年」、不输出表格、不写开放题、不写心理性格套话。",
+        "强信号优先级：Sun+9宫（父亲/权威）、4宫主+Rahu/12宫（搬迁）、5宫主+Jupiter（学历）、2宫SAV+Saturn（经济）、Ketu落宫、Antardasha窗口。",
+        "必须输出5条。只有在数据明显不足时才输出4条，并说明「第5条信号不足，暂不硬凑」。",
       ].join("\n"),
     }),
   },
@@ -133,16 +141,17 @@ export const vedicTools: ToolDef[] = [
     inputSchema: z.object({
       responses: z.array(z.object({
         statement: z.string().describe("The statement number"),
-        result: z.string().describe("User response: 准 / 不准 / 部分准"),
+        result: z.string().describe("User response: 是 / 否 / 准 / 不准"),
       })).describe("User's 5 responses"),
     }),
     mutating: true,
     run: async (_ctx, args) => {
       const responses = args.responses as Array<{ result: string }>;
       const total = responses.length;
-      const hits = responses.filter((r) => r.result === "准").length;
-      const partial = responses.filter((r) => r.result === "部分准").length;
-      const misses = responses.filter((r) => r.result === "不准").length;
+      const normalize = (value: string) => value.trim().toLowerCase();
+      const hits = responses.filter((r) => ["是", "准", "yes", "y", "true"].includes(normalize(r.result))).length;
+      const partial = responses.filter((r) => ["部分准", "不确定", "partial"].includes(normalize(r.result))).length;
+      const misses = responses.filter((r) => ["否", "不准", "no", "n", "false"].includes(normalize(r.result))).length;
       const hitRate = hits / Math.max(total, 1);
 
       let decision: string;
@@ -161,12 +170,50 @@ export const vedicTools: ToolDef[] = [
         decision,
         next_step: hitRate >= 0.5
           ? "Now call generate_vedic_report to produce the full report."
-          : "Suggest user to run time rectification (vedic-rectifier).",
+          : "Suggest user to run time rectification with the vedic-rectifier skill.",
       };
     },
   },
 
-  // Tool 4: 生成完整星盘报告（调用 /api/full-report 拿全量数据）
+  // Tool 4: 时间校准（验前事命中低时才用）
+  {
+    id: "rectify_birth_time",
+    description:
+      "Run Vedic birth-time rectification from 5 major dated life events. Use only after weak validation or explicit rectification request.",
+    inputSchema: z.object({
+      birth_date: z.string().describe("Original birth date YYYY-MM-DD"),
+      birth_time: z.string().describe("Original birth time HH:MM"),
+      latitude: z.number().describe("Latitude"),
+      longitude: z.number().describe("Longitude"),
+      events: z.array(z.object({
+        date: z.string().describe("Event date, preferably YYYY-MM or YYYY-MM-DD"),
+        event: z.string().describe("Major life event description"),
+        category: z.string().describe("marriage/death/career/disaster/wealth/education/relocation/health"),
+      })).describe("Five major life events for rectification"),
+    }),
+    mutating: true,
+    run: async (_ctx, args) => {
+      const [year, month, day] = String(args.birth_date).split("-").map(Number);
+      const [hour, minute] = String(args.birth_time).split(":").map(Number);
+
+      const result = await apiCall("/api/rectify", {
+        year, month, day, hour, minute,
+        lat: Number(args.latitude),
+        lon: Number(args.longitude),
+        tz_str: "Asia/Shanghai",
+        events: args.events,
+      }, _ctx.env);
+
+      return {
+        status: "rectification_complete",
+        result,
+        instruction:
+          "Explain the rectification result. If match_rate is strong, confirm the original time. If weak, recommend a correction workflow before final analysis.",
+      };
+    },
+  },
+
+  // Tool 5: 生成完整星盘报告（调用 /api/full-report 拿全量数据）
   {
     id: "generate_vedic_report",
     description:
@@ -195,8 +242,10 @@ export const vedicTools: ToolDef[] = [
         status: "full_data_ready",
         chart: result,
         instruction: [
-          "⚠️ 生成一份**完整、长篇**的吠陀占星报告（3000+字，Markdown）。",
-          "这是用户付费购买的完整产品，不是简短总结。每章节必须详细。",
+          "⚠️ 生成一份**完整、长篇**的吠陀占星报告（Markdown）。",
+          "这是用户通过验前事后的完整产品，不是简短总结。",
+          "必须按 vedic-core 逻辑写：先人话解释，再给证据。不要只罗列参数。",
+          "输出比例：70%通俗解读 + 20%数据表格 + 10%技术注释。",
           "",
           "# 吠陀占星完整分析报告",
           "",
@@ -209,10 +258,10 @@ export const vedicTools: ToolDef[] = [
           "- SAV=337 确认数学正确",
           "",
           "## 三、九大行星逐一深度分析",
-          "每颗行星：落宫/星座/Nakshatra/尊贵度/P1角色/相位/人生影响",
+          "每颗行星至少2段：落宫/星座/Nakshatra/尊贵度/P1角色/相位/燃烧或逆行/人生影响",
           "",
           "## 四、十二宫位全覆盖诊断",
-          "1-12宫逐宫：宫主+行星+SAV+当前Dasha影响",
+          "1-12宫逐宫：宫主+行星+SAV+当前Dasha影响。每宫都要有白话解释。",
           "",
           "## 五、Dasha 大运完整时间线",
           "当前大运/小运 + 未来3年切换表 + 历史事件验证",
@@ -230,7 +279,7 @@ export const vedicTools: ToolDef[] = [
           "- Dasha速查表 / 尊贵度总表 / SAV分布",
           "- 「基于pysweph+PyJHora真实计算，仅供个人参考」",
           "",
-          "⚠️ 硬性要求：每个章节至少200字，总长至少3000字。",
+          "⚠️ 硬性要求：总长至少5000字。每个章节都必须展开，不允许用一句话带过。",
           "使用Markdown表格、加粗、列表等格式增强可读性。不确定处标注「待核实」。",
         ].join("\n"),
       };
