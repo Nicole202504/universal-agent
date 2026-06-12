@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { Env } from "../../types";
+import { runBackgroundAgentStep } from "../../harness/background-step";
 
 type BirthPayload = {
   birth_date: string;
@@ -71,61 +72,6 @@ const PLANET_LABELS: Record<string, string> = {
   ketu: "Ketu",
 };
 
-function birthToApiPayload(input: BirthPayload): Record<string, unknown> {
-  const [year, month, day] = input.birth_date.split("-").map(Number);
-  const [hour, minute] = input.birth_time.split(":").map(Number);
-  return {
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    lat: Number(input.latitude),
-    lon: Number(input.longitude),
-    tz_str: input.timezone || "Asia/Shanghai",
-  };
-}
-
-async function vedicApiCall(env: Env, path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const base = env.VEDIC_API_URL || "http://localhost:8900";
-  const res = await fetch(`${base}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Vedic API ${path} returned ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return (await res.json()) as Record<string, unknown>;
-}
-
-async function deepseekChat(
-  env: Env,
-  messages: Array<{ role: "system" | "user"; content: string }>,
-  maxTokens: number,
-): Promise<string> {
-  const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages,
-      temperature: 0.32,
-      max_tokens: maxTokens,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`DeepSeek returned ${res.status}: ${text.slice(0, 300)}`);
-  }
-  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  return json.choices?.[0]?.message?.content?.trim() ?? "";
-}
-
 function buildSkillRules(step: ReportStep): string {
   const skillLine = step.skillIds.join(" + ");
   if (step.section === "planet_audit") {
@@ -192,24 +138,6 @@ function validationSummary(params: VedicReportParams): string {
   }).join("\n");
 }
 
-async function createArtifact(
-  env: Env,
-  params: VedicReportParams,
-  step: ReportStep,
-  content: string,
-): Promise<string> {
-  const id = crypto.randomUUID();
-  const description = step.section === "final_html"
-    ? "整体人生画像与未来节奏"
-    : `${step.title} - ${step.skillIds.join(" + ")}`;
-  await env.DB.prepare(
-    "INSERT INTO artifacts (id, agent_id, run_id, type, title, description, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-  )
-    .bind(id, params.agentId, params.runId, step.type, step.title, description, content, Date.now())
-    .run();
-  return id;
-}
-
 async function getPriorArtifacts(env: Env, runId: string): Promise<Array<{ title: string; content: string }>> {
   const { results } = await env.DB.prepare(
     "SELECT title, content FROM artifacts WHERE run_id = ?1 ORDER BY created_at ASC",
@@ -220,45 +148,66 @@ async function getPriorArtifacts(env: Env, runId: string): Promise<Array<{ title
   }));
 }
 
-async function generateStepContent(
+async function getStepArtifactId(env: Env, runId: string, title: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT id FROM artifacts WHERE run_id = ?1 AND title = ?2 ORDER BY created_at DESC LIMIT 1",
+  ).bind(runId, title).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+function buildAgentStepPrompt(
   env: Env,
   params: VedicReportParams,
   step: ReportStep,
-  chart: Record<string, unknown>,
-): Promise<string> {
-  const priorArtifacts = step.section === "final_html" ? await getPriorArtifacts(env, params.runId) : [];
-  const messages = [
-    {
-      role: "system" as const,
-      content: [
-        "你是吠陀占星 Agent 的报告生成执行器。你必须遵循已加载 skill 的分析逻辑，输出中文。",
-        "所有结论只能基于工具返回的 chart、birth、validation，不可编造。",
-        "每次只生成当前指定模块。模块内容必须完整，可以作为右侧产物独立展示。",
-        buildSkillRules(step),
-      ].join("\n\n"),
-    },
-    {
-      role: "user" as const,
-      content: [
-        `当前模块：${step.title}`,
-        `section: ${step.section}`,
-        step.planet ? `planet: ${step.planet}` : "",
-        "",
-        "birth:",
-        JSON.stringify(params.birth),
-        "",
-        "validation:",
-        validationSummary(params),
-        "",
-        step.section === "final_html" ? "已生成的分段分析材料:" : "",
-        step.section === "final_html" ? JSON.stringify(priorArtifacts) : "",
-        "",
-        "chart:",
-        JSON.stringify(chart),
-      ].filter(Boolean).join("\n"),
-    },
-  ];
-  return await deepseekChat(env, messages, step.section === "final_html" ? 9000 : 4200);
+  priorArtifacts: Array<{ title: string; content: string }>,
+) {
+  const skillCalls = step.skillIds.map((skillId) => `get_skill_instructions("${skillId}")`).join("、");
+  const planetLine = step.planet ? `planet: ${step.planet}` : "planet: 不需要";
+  const artifactDescription = step.section === "final_html" ? "整体人生画像与未来节奏" : `${step.title} - ${step.skillIds.join(" + ")}`;
+
+  return [
+    "这是 /vedic 用户页后台 Workflow 交给你的一个单步 Agent 任务。必须严格执行工具链，不要只用聊天文本回答。",
+    "",
+    "当前目标：",
+    `- run_id: ${params.runId}`,
+    `- 当前模块标题: ${step.title}`,
+    `- section: ${step.section}`,
+    `- ${planetLine}`,
+    `- 产物类型: ${step.type}`,
+    "",
+    "必须按顺序执行：",
+    `1. 先调用 ${skillCalls}。`,
+    `2. 再调用 generate_vedic_report，参数必须包含 birth_date、birth_time、latitude、longitude、timezone、section${step.planet ? "、planet" : ""}。`,
+    `3. 拿到 generate_vedic_report 的 chart/instruction 后，根据已加载 skill 和工具返回数据生成「${step.title}」完整内容。`,
+    `4. 必须调用 create_artifact，参数必须是：type="${step.type}"，title="${step.title}"，description="${artifactDescription}"，run_id="${params.runId}"，content=完整模块内容。`,
+    "5. 最后只用一句话说明该模块已写入产物区。",
+    "",
+    "当前模块写作规则：",
+    buildSkillRules(step),
+    "",
+    "出生信息：",
+    `birth_date: ${params.birth.birth_date}`,
+    `birth_time: ${params.birth.birth_time}`,
+    `birth_place: ${params.birth.birth_place}`,
+    `latitude: ${params.birth.latitude}`,
+    `longitude: ${params.birth.longitude}`,
+    `timezone: ${params.birth.timezone || "Asia/Shanghai"}`,
+    `gender: ${params.birth.gender || ""}`,
+    "",
+    "验前事反馈：",
+    validationSummary(params),
+    "",
+    step.section === "final_html"
+      ? "已生成的分段分析材料摘要，最终 HTML 必须综合这些材料，不要复制粘贴技术审计："
+      : "",
+    step.section === "final_html" ? JSON.stringify(priorArtifacts) : "",
+    "",
+    "禁止事项：",
+    "- 禁止跳过工具调用直接写报告。",
+    "- 禁止生成当前模块以外的产物。",
+    "- 禁止把完整报告只发在聊天文本里而不调用 create_artifact。",
+    "- 禁止编造工具没有返回的数据。",
+  ].filter(Boolean).join("\n");
 }
 
 export class VedicReportWorkflow extends WorkflowEntrypoint<Env, VedicReportParams> {
@@ -271,12 +220,6 @@ export class VedicReportWorkflow extends WorkflowEntrypoint<Env, VedicReportPara
       ).bind(params.runId, Date.now()).run();
     });
 
-    const chartJson = await step.do("load-full-chart", async () => {
-      const result = await vedicApiCall(this.env, "/api/full-report", birthToApiPayload(params.birth));
-      return JSON.stringify(result);
-    });
-    const chart = JSON.parse(String(chartJson || "{}")) as Record<string, unknown>;
-
     for (const reportStep of REPORT_STEPS) {
       try {
         await step.do(`start-${reportStep.key}`, async () => {
@@ -288,12 +231,24 @@ export class VedicReportWorkflow extends WorkflowEntrypoint<Env, VedicReportPara
           ).bind(params.runId, reportStep.key, Date.now()).run();
         });
 
-        const content = await step.do(`generate-${reportStep.key}`, async () => {
-          return await generateStepContent(this.env, params, reportStep, chart);
+        await step.do(`agent-${reportStep.key}`, async () => {
+          const priorArtifacts = reportStep.section === "final_html"
+            ? await getPriorArtifacts(this.env, params.runId)
+            : [];
+          const result = await runBackgroundAgentStep({
+            env: this.env,
+            agentId: params.agentId,
+            runId: params.runId,
+            prompt: buildAgentStepPrompt(this.env, params, reportStep, priorArtifacts),
+            maxSteps: reportStep.section === "final_html" ? 10 : 8,
+            maxOutputTokens: reportStep.section === "final_html" ? 12000 : 9000,
+          });
+          return JSON.stringify(result);
         });
 
-        const artifactId = await step.do(`persist-${reportStep.key}`, async () => {
-          const id = await createArtifact(this.env, params, reportStep, content);
+        const artifactId = await step.do(`verify-${reportStep.key}`, async () => {
+          const id = await getStepArtifactId(this.env, params.runId, reportStep.title);
+          if (!id) throw new Error(`agent did not create artifact: ${reportStep.title}`);
           await this.env.DB.prepare(
             "UPDATE vedic_report_steps SET status = 'completed', artifact_id = ?3, completed_at = ?4 WHERE run_id = ?1 AND step_key = ?2",
           ).bind(params.runId, reportStep.key, id, Date.now()).run();

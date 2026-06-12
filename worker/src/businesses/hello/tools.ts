@@ -44,6 +44,7 @@ export const helloTools: ToolDef[] = [
       title: z.string().describe("short artifact title"),
       description: z.string().optional().describe("one-line artifact description"),
       content: z.string().describe("complete artifact content; for html, include the full HTML document"),
+      run_id: z.string().optional().describe("optional Vedic report run id that owns this artifact"),
     }),
     mutating: true,
     run: async (ctx, args) => {
@@ -52,15 +53,16 @@ export const helloTools: ToolDef[] = [
       const title = String(args.title);
       const description = args.description == null ? "" : String(args.description);
       const content = String(args.content);
+      const runId = args.run_id == null ? (ctx.runId ?? null) : String(args.run_id);
       const createdAt = Date.now();
 
       await ctx.env.DB.prepare(
-        "INSERT INTO artifacts (id, agent_id, type, title, description, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO artifacts (id, agent_id, run_id, type, title, description, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
       )
-        .bind(id, ctx.agentId, type, title, description, content, createdAt)
+        .bind(id, ctx.agentId, runId, type, title, description, content, createdAt)
         .run();
 
-      return { id, agentId: ctx.agentId, type, title, description, createdAt, panel: "artifacts" };
+      return { id, agentId: ctx.agentId, runId, type, title, description, createdAt, panel: "artifacts" };
     },
   },
   {

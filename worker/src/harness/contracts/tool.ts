@@ -6,6 +6,7 @@ import type { Env } from "../../types";
 export interface ToolCtx {
   env: Env;
   agentId: string;
+  runId?: string;
 }
 
 // Tool = 幂等原子动作（do-this）。一个工具 = 一个动作。
