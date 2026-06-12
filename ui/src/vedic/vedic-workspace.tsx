@@ -178,7 +178,8 @@ function buildContinuationPrompt(
 
 export function VedicWorkspace() {
   const runtime = useUniversalAgentChat();
-  const lastAutoResumeRef = useRef("");
+  const sendTextRef = useRef(runtime.sendText);
+  const lastAutoResumeRef = useRef({ key: "", at: 0 });
   const autoResumeBlockedUntilRef = useRef(0);
   const [form, setForm] = useState<BirthForm>(() => defaultBirthForm());
   const [placeQuery, setPlaceQuery] = useState("");
@@ -204,6 +205,15 @@ export function VedicWorkspace() {
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0],
     [artifacts, selectedArtifactId],
   );
+  const isAgentRunning = Boolean(
+    runtime.isStreaming ||
+      runtime.status === "streaming" ||
+      runtime.status === "submitted",
+  );
+
+  useEffect(() => {
+    sendTextRef.current = runtime.sendText;
+  }, [runtime.sendText]);
 
   useEffect(() => {
     const q = placeQuery.trim();
@@ -242,21 +252,22 @@ export function VedicWorkspace() {
   }, [reportStartedAt]);
 
   useEffect(() => {
-    if (!reportStartedAt || runtime.isStreaming) return;
+    if (!reportStartedAt || isAgentRunning) return;
     if (Date.now() < autoResumeBlockedUntilRef.current) return;
     const nextStep = REPORT_STEPS.find((step) => !findStepArtifact(artifacts, step.title));
     if (!nextStep) return;
 
     const key = `${reportStartedAt}:${nextStep.title}:${artifacts.length}`;
-    if (lastAutoResumeRef.current === key) return;
-    lastAutoResumeRef.current = key;
+    const now = Date.now();
+    if (lastAutoResumeRef.current.key === key && now - lastAutoResumeRef.current.at < 45000) return;
+    lastAutoResumeRef.current = { key, at: now };
 
     const timer = window.setTimeout(() => {
-      runtime.sendText(buildContinuationPrompt(nextStep, form, validationItems, answers, artifacts));
-      autoResumeBlockedUntilRef.current = Date.now() + 8000;
-    }, 1200);
+      sendTextRef.current(buildContinuationPrompt(nextStep, form, validationItems, answers, artifacts));
+      autoResumeBlockedUntilRef.current = Date.now() + 12000;
+    }, 800);
     return () => window.clearTimeout(timer);
-  }, [answers, artifacts, form, reportStartedAt, runtime, validationItems]);
+  }, [answers, artifacts, form, isAgentRunning, reportStartedAt, validationItems]);
 
   function selectPlace(place: PlaceResult) {
     setForm((current) => ({
@@ -313,8 +324,8 @@ export function VedicWorkspace() {
     setReportStartedAt(startedAt);
     setArtifacts([]);
     setSelectedArtifactId(null);
-    lastAutoResumeRef.current = `initial:${startedAt}`;
-    autoResumeBlockedUntilRef.current = Date.now() + 15000;
+    lastAutoResumeRef.current = { key: `initial:${startedAt}`, at: Date.now() };
+    autoResumeBlockedUntilRef.current = Date.now() + 20000;
 
     const answerText = answers.map((item) => {
       const source = validationItems.find((validation) => validation.id === item.id);
