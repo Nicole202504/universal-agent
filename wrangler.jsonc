@@ -40,7 +40,11 @@
       "database_id": "908ef566-4354-448b-94e6-2decda86dcda",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+
+  "limits": {
+    "subrequests": 50000
+  }
 
   // P0 无 cron；P1 从 agent_config.schedules 装配定时任务后再加 "triggers": { "crons": [...] }
 }
