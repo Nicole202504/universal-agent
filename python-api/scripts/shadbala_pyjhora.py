@@ -74,9 +74,9 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
     # PyJHora 的 Saptavargaja 硬编码用 hora chart_method=2 (Traditional Parasara)
     # 但 JHora 的 Shadbala 实际用 method=1 (PVR/Parasara parivritti)
     # Uchcha/OjaYugma/Kendra/Drekkana 子项完美匹配，无需修改
-    
+
     from jhora import utils as jhora_utils
-    
+
     sv_factors = const.sapthavargaja_factors  # [1, 2, 3, 7, 9, 12, 30]
     pp_rasi = charts.rasi_chart(jd, place)[:const._pp_count_upto_ketu]
     pp_sv = {}
@@ -87,13 +87,13 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             # Hora method=1 (PVR/parivritti) gives Sthana ALL MATCH
             # Note: JHora's HoraPreference=6 is for DISPLAY D2, not for Saptavargaja
             pp_sv[dcf] = charts.hora_chart(pp_rasi, chart_method=1)[:const._pp_count_upto_ketu]
-    
+
     # Uchcha, OjaYugma, Kendra, Drekkana — use PyJHora (100% match)
     ub = strength._uchcha_bala(pp_sv[1])
     ob = strength._ojayugama_bala(pp_sv[1], pp_sv[9])
     kb = strength._kendra_bala(pp_sv[1])
     db = strength._dreshkon_bala(pp_sv[1])
-    
+
     # Saptavargaja — rebuild with corrected D2
     h_to_p = jhora_utils.get_house_planet_list_from_planet_positions(pp_rasi)
     cr = house._get_compound_relationships_of_planets(h_to_p)
@@ -104,7 +104,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
         const._MITHRA_FRIEND - 1: 15,
         const._ADHIMITRA_GREATFRIEND - 1: 22.5
     }
-    
+
     svb_sum = [0.0] * 7
     mt_ranges = const.moola_trikona_range_of_planets  # {planet: (sign, start_deg, end_deg)}
     for dcf in sv_factors:
@@ -113,21 +113,21 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             h = int(pd[1][0] if isinstance(pd[1], (list, tuple)) else pd[0])
             p_deg = pd[1][1] if isinstance(pd[1], (list, tuple)) else pd[1]
             owner = const._house_owners_list[h]
-            
+
             # FIX: MoolaTrikona requires both sign match AND degree within range
             is_mt = False
             if dcf == 1 and p_idx in mt_ranges:
                 mt_sign, mt_start, mt_end = mt_ranges[p_idx]
                 if h == mt_sign and mt_start <= p_deg <= mt_end:
                     is_mt = True
-            
+
             if is_mt:
                 svb_sum[p_idx] += 45
             elif const.house_strengths_of_planets[p_idx][h] == const._OWNER_RULER:
                 svb_sum[p_idx] += 30
             else:
                 svb_sum[p_idx] += sb_fac[cr[p_idx][owner]]
-    
+
     sthana = [round(ub[i] + svb_sum[i] + ob[i] + kb[i] + db[i], 2) for i in range(7)]
 
     # ========== 2. KAALA BALA (fix Hora Bala) ==========
@@ -155,7 +155,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
     #   - Moon is malefic when Krishna paksha (tithi > 15)
     cht_benefics, cht_malefics = charts.benefics_and_malefics(jd, place, exclude_rahu_ketu=True)
     mercury_is_malefic = 3 in cht_malefics
-    
+
     # Additional check: if Mercury is BENEFIC by conjunction, verify aspects
     if not mercury_is_malefic:
         me_sign = int(pp_rasi[4][1][0])
@@ -164,7 +164,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
         aspect_malefics = {0, 2, 6}  # Sun, Mars, Saturn always
         if 1 in cht_malefics:
             aspect_malefics.add(1)  # Waning Moon
-        
+
         mal_aspect_count = 0
         ben_aspect_count = 0
         for mal_idx in aspect_malefics:
@@ -180,7 +180,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             if mal_idx == 6:
                 if (p_sign + 2) % 12 == me_sign or (p_sign + 9) % 12 == me_sign:
                     mal_aspect_count += 1
-        
+
         # Benefic aspects on Mercury (Jupiter 5th/9th, Venus 7th)
         for ben_idx in [4, 5]:  # Jupiter, Venus
             p_sign = int(pp_rasi[ben_idx + 1][1][0])
@@ -189,11 +189,11 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             if ben_idx == 4:  # Jupiter 5th and 9th
                 if (p_sign + 4) % 12 == me_sign or (p_sign + 8) % 12 == me_sign:
                     ben_aspect_count += 1
-        
+
         # Mercury alone + aspected by more malefics than benefics → malefic
         if mal_aspect_count > ben_aspect_count:
             mercury_is_malefic = True
-    
+
     benefic_planets = set(cht_benefics)
     malefic_planets = set(cht_malefics)
     if mercury_is_malefic and 3 in benefic_planets:
@@ -296,7 +296,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
     # JHora 使用 WeekdayDefinitionKaala=1 (日出制星期)
     # Hora 序列: Sun→Venus→Mercury→Moon→Saturn→Jupiter→Mars (按行星时序)
     hora_lords_order = [0, 5, 3, 1, 6, 4, 2]  # Sun=0, Venus=5, Mercury=3, Moon=1, Saturn=6, Jupiter=4, Mars=2
-    
+
     # 获取日出时间
     try:
         sunrise_data = drik.sunrise(jd, place)
@@ -306,7 +306,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             sunrise_hour = local_hour - 6
     except:
         sunrise_hour = 6.0  # fallback
-    
+
     # 日出制星期 (WeekdayDefinitionKaala=1)
     # 如果出生在日出之前，算前一天的星期
     dt = datetime.date(year, month, day)
@@ -314,23 +314,23 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
     jh_weekday = (py_weekday + 1) % 7  # Sun=0, Mon=1, ..., Sat=6
     if local_hour < sunrise_hour:
         jh_weekday = (jh_weekday - 1) % 7
-    
+
     # 从日出算过了几个 hora
     hours_since_sunrise = local_hour - sunrise_hour
     if hours_since_sunrise < 0:
         hours_since_sunrise += 24
     hora_number = int(hours_since_sunrise)  # 0-based hora index
-    
+
     # 每天第一个 hora 的主星 = 该日星期名对应的行星
     # Sun=0→Sun, Mon=1→Moon, Tue=2→Mars, Wed=3→Mercury, Thu=4→Jupiter, Fri=5→Venus, Sat=6→Saturn
     day_lord_index = jh_weekday  # 0=Sun,...,6=Saturn
-    
+
     # 在 hora_lords_order 中找到日主的位置
     start_pos = hora_lords_order.index(day_lord_index)
-    
+
     # 当前 hora 的主星
     current_hora_lord = hora_lords_order[(start_pos + hora_number) % 7]
-    
+
     hora_fixed = [0.0] * 7
     hora_fixed[current_hora_lord] = 60.0
 
@@ -344,19 +344,19 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
     # JHora 使用 equal house system 的精确 Lagna 度数作为基准
     # 零点 = Lagna度数 + powerless_house * 30°
     # 公式: dig_bala = angular_dist_to_zero_point / 3
-    
+
     pp = charts.rasi_chart(jd, place)[:const._pp_count_upto_ketu]
-    
+
     # Get exact lagna degree
     lagna_data = pp[0]
     if isinstance(lagna_data[1], (list, tuple)):
         lagna_full = lagna_data[1][0] * 30 + lagna_data[1][1]
     else:
         lagna_full = lagna_data[0] * 30 + lagna_data[1]
-    
+
     # Zero-point (powerless point) for each planet, using exact lagna
     powerless_house = const.dig_bala_powerless_houses_of_planets  # [3, 9, 3, 6, 6, 9, 0]
-    
+
     dig = [0.0] * 7
     for p_idx in range(7):
         p_data = pp[p_idx + 1]
@@ -364,7 +364,7 @@ def calculate_shadbala_fixed(year, month, day, hour, minute, lat, lon, tz_offset
             p_long = p_data[1][0] * 30 + p_data[1][1]
         else:
             p_long = p_data[0] * 30 + p_data[1]
-        
+
         zero_point = (lagna_full + powerless_house[p_idx] * 30) % 360
         diff = abs(p_long - zero_point) % 360
         if diff > 180:

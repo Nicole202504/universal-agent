@@ -7,7 +7,7 @@ SAV/BAV 100% 匹配 JHora 桌面版
 def calculate_ashtakavarga_fixed(year, month, day, hour, minute, lat, lon, tz_offset):
     """
     使用 PyJHora 计算 SAV/BAV，100% 匹配 JHora 桌面版。
-    
+
     Returns:
         dict: {
             'sarvashtakavarga': {sign_name: int, ...},  # SAV per sign

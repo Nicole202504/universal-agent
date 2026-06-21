@@ -52,13 +52,13 @@ def _setup_jhora():
 
 def calculate_dasha_fixed(year, month, day, hour, minute, lat, lon, tz_offset):
     """Calculate Vimsottari Dasha using PyJHora's precise algorithm.
-    
+
     Args:
         year, month, day: Birth date
         hour, minute: Birth time (local)
         lat, lon: Birth coordinates
         tz_offset: Timezone offset in hours (e.g., 8.0 for Asia/Shanghai)
-    
+
     Returns:
         List of dasha dicts compatible with engine.py format:
         [{'planet': str, 'start': 'YYYY-MM', 'end': 'YYYY-MM', 'years': float,

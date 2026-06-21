@@ -292,6 +292,18 @@ def api_prevalidate(req: ChartRequest):
         # 尊贵度
         dignity = chart.get("dignity", {})
 
+        planets_for_validation = {
+            name: {
+                "sign": planet.get("sign"),
+                "house": planet.get("house"),
+                "degree": round(float(planet.get("degree", 0)), 4),
+                "retrograde": planet.get("retrograde", False),
+                "nakshatra": planet.get("nakshatra", {}),
+                "dignity": dignity.get(name, {}).get("compound", "unknown"),
+            }
+            for name, planet in chart["planets"].items()
+        }
+
         chart_data_for_llm = {
             "lagna": {"sign": lagna["sign"], "degree": lagna["degree"], "nakshatra": lagna.get("nakshatra", {})},
             "moon": {"sign": moon["sign"], "house": moon["house"], "nakshatra": moon.get("nakshatra", {})},
@@ -304,6 +316,9 @@ def api_prevalidate(req: ChartRequest):
                 "sign": chart["planets"]["Saturn"]["sign"],
                 "dignity": dignity.get("Saturn", {}).get("compound", "unknown"),
             },
+            "planets": planets_for_validation,
+            "karakas": chart.get("karakas", {}),
+            "vedic_aspects": chart.get("vedic_aspects", []),
             "house_4": {"lord": house_4.get("lord", ""), "lord_house": house_4.get("lord_house", 0)},
             "house_5": {"lord": house_5.get("lord", ""), "lord_house": house_5.get("lord_house", 0)},
             "house_9": {"lord": house_9.get("lord", ""), "lord_house": house_9.get("lord_house", 0)},
@@ -326,7 +341,13 @@ def api_prevalidate(req: ChartRequest):
             },
             "house_lords": chart["house_lords"],
             "all_dashas": [
-                {"planet": d["planet"], "start": d["start"], "end": d["end"], "is_current": d.get("is_current", False)}
+                {
+                    "planet": d["planet"],
+                    "start": d["start"],
+                    "end": d["end"],
+                    "is_current": d.get("is_current", False),
+                    "antardashas": d.get("antardashas", []),
+                }
                 for d in dashas
             ],
             "chart_data_for_llm": chart_data_for_llm,
@@ -386,12 +407,30 @@ def api_full_report(req: ChartRequest):
     """排盘 + 返回完整报告所需的全量数据包（供 LLM 生成九章长报告）"""
     try:
         from engine import calculate_full_chart
+        from transit import calc_transit
+        from formatter import format_structured_data
 
         chart = calculate_full_chart(
             req.year, req.month, req.day,
             req.hour, req.minute,
             req.lat, req.lon, req.tz_str,
         )
+        transit = calc_transit(
+            chart["lagna"]["sign_idx"],
+            chart["planets"]["Moon"]["sign_idx"],
+            req.tz_str,
+        )
+        meta = {
+            "dob": f"{req.year:04d}-{req.month:02d}-{req.day:02d}",
+            "time": f"{req.hour:02d}:{req.minute:02d}",
+            "place": f"lat={req.lat}, lon={req.lon}",
+            "lat": req.lat,
+            "lon": req.lon,
+            "time_precision": "精确到分钟",
+            "time_source": "用户输入",
+        }
+        user_info = {"gender": "未提供", "relationship": "未提供"}
+        structured_data = format_structured_data(chart, transit, meta, user_info)
 
         # 12宫主表
         house_lords = chart["house_lords"]
@@ -416,19 +455,68 @@ def api_full_report(req: ChartRequest):
         # 燃烧
         combustion = chart.get("combustion", {})
 
+        divisional = {
+            "d9": chart.get("d9", {}),
+            "d10": chart.get("d10", {}),
+            "d4": chart.get("d4", {}),
+            "d5": chart.get("d5", {}),
+            "all": chart.get("divisional_charts", {}),
+        }
+
+        planet_context = {}
+        shadbala = chart.get("shadbala", {})
+        aspects = chart.get("aspects", [])
+        vedic_aspects = chart.get("vedic_aspects", [])
+        for name, p in chart["planets"].items():
+            planet_context[name] = {
+                "d1": planets_detail.get(name, {}),
+                "house_lord_roles": [
+                    {"house": h, **info}
+                    for h, info in house_lords.items()
+                    if info.get("lord") == name
+                ],
+                "shadbala": shadbala.get(name, {}) if isinstance(shadbala, dict) else {},
+                "vedic_aspects": [
+                    a for a in vedic_aspects
+                    if a.get("source") == name or name in a.get("planets_targeted", [])
+                ],
+                "combustion": combustion.get(name, {}),
+                "vargottama": chart.get("vargottama", {}).get(name, False),
+                "d9": chart.get("d9", {}).get(name),
+                "d10": chart.get("d10", {}).get(name),
+                "d4": chart.get("d4", {}).get(name),
+                "d5": chart.get("d5", {}).get(name),
+                "sav_of_occupied_house": chart.get("sav_by_house", {}).get(p["house"], {}),
+            }
+
         return {
             "success": True,
+            "data_contract": "structured_data_md + normalized_report_context_v2",
             "lagna": {"sign": chart["lagna"]["sign"], "degree": chart["lagna"]["degree"], "nakshatra": chart["lagna"].get("nakshatra", {})},
             "moon": {"sign": chart["planets"]["Moon"]["sign"], "house": chart["planets"]["Moon"]["house"]},
             "sun": {"sign": chart["planets"]["Sun"]["sign"], "house": chart["planets"]["Sun"]["house"]},
             "planets": planets_detail,
+            "planet_context": planet_context,
             "house_lords": house_lords,
             "dashas": dashas,
             "current_dasha": current_dasha,
+            "karakas": chart.get("karakas", {}),
+            "shadbala": shadbala,
+            "aspects": aspects,
+            "aspect_system_note": "aspects uses angular/orb relationships; vedic_aspects is the authoritative Parashari Graha Drishti table for Vedic reports",
+            "vedic_aspects": vedic_aspects,
+            "dignity": chart.get("dignity", {}),
+            "special_points": chart.get("special_points", {}),
             "sav_by_house": sav_by_house,
+            "sav": chart.get("sav", {}),
+            "bav": chart.get("bav", {}),
             "sav_total": sum(chart["sav"].values()),
             "combustion": {k: {"distance": v.get("distance")} for k, v in combustion.items()} if combustion else {},
+            "moon_phase": chart.get("moon_phase", {}),
+            "divisional": divisional,
             "vargottama": chart.get("vargottama", {}),
+            "transit": transit,
+            "structured_data": structured_data,
             "yogas_hint": "Check for Raja Yoga (angular+trine lord conjunction), Dhana Yoga (L2+L11), Dharma-Karma Yoga (L9+L10)",
         }
     except Exception as e:
