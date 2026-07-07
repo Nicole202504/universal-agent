@@ -267,7 +267,12 @@ export function VedicWorkspace() {
       setValidationItems(nextItems);
       setAnswers(nextItems.map((item) => ({ id: item.id, answer: "", note: "" })));
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : "生成验前事失败");
+      const message = error instanceof Error ? error.message : "";
+      setValidationError(
+        message === "Failed to fetch"
+          ? "生成请求没有成功返回，请检查后端服务是否在线，或稍后重试。"
+          : message || "生成验前事失败",
+      );
     } finally {
       setValidationLoading(false);
     }

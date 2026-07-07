@@ -5,6 +5,8 @@ import { reportStepsForRun } from "../businesses/vedic/report-workflow";
 export const apiRoutes = new Hono<{ Bindings: Env }>();
 
 const VEDIC_API_FALLBACK = "http://localhost:8900";
+const VEDIC_API_TIMEOUT_MS = 28_000;
+const DEEPSEEK_TIMEOUT_MS = 16_000;
 
 type BirthPayload = {
   birth_date: string;
@@ -28,17 +30,27 @@ type ValidationResponse = {
   note?: string;
 };
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function vedicApiCall(
   env: Env,
   path: string,
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const base = env.VEDIC_API_URL || VEDIC_API_FALLBACK;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetchWithTimeout(`${base}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, VEDIC_API_TIMEOUT_MS);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Vedic API ${path} returned ${res.status}: ${text.slice(0, 300)}`);
@@ -81,7 +93,7 @@ async function deepseekChat(
   messages: Array<{ role: "system" | "user"; content: string }>,
   maxTokens: number,
 ): Promise<string> {
-  const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
+  const res = await fetchWithTimeout("https://api.deepseek.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -93,7 +105,7 @@ async function deepseekChat(
       temperature: 0.35,
       max_tokens: maxTokens,
     }),
-  });
+  }, DEEPSEEK_TIMEOUT_MS);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`DeepSeek returned ${res.status}: ${text.slice(0, 300)}`);
@@ -142,28 +154,73 @@ function fallbackValidationItems(chart: Record<string, unknown>): ValidationItem
   ];
 }
 
+function compactValidationChart(chart: Record<string, unknown>): Record<string, unknown> {
+  const allDashas = Array.isArray(chart.all_dashas) ? chart.all_dashas : [];
+  const currentIndex = allDashas.findIndex((dasha) => {
+    const value = dasha as { is_current?: boolean };
+    return value.is_current;
+  });
+  const dashaWindow = currentIndex >= 0
+    ? allDashas.slice(Math.max(0, currentIndex - 1), currentIndex + 2)
+    : allDashas.slice(0, 3);
+
+  return {
+    lagna: chart.lagna,
+    moon_sign: chart.moon_sign,
+    sun_sign: chart.sun_sign,
+    sav_total: chart.sav_total,
+    current_dasha: chart.current_dasha,
+    nearby_dashas: dashaWindow.map((dasha) => {
+      const value = dasha as {
+        planet?: string;
+        start?: string;
+        end?: string;
+        is_current?: boolean;
+        antardashas?: Array<Record<string, unknown>>;
+      };
+      return {
+        planet: value.planet,
+        start: value.start,
+        end: value.end,
+        is_current: value.is_current,
+        antardashas: value.antardashas?.slice(0, 4).map((antardasha) => ({
+          planet: antardasha.planet,
+          start: antardasha.start,
+          end: antardasha.end,
+        })),
+      };
+    }),
+    chart_data_for_llm: chart.chart_data_for_llm,
+  };
+}
+
 async function generateValidationItems(env: Env, chart: Record<string, unknown>): Promise<ValidationItem[]> {
-  const content = await deepseekChat(
-    env,
-    [
-      {
-        role: "system",
-        content:
-          "你是吠陀占星验前事生成器。只输出JSON，不要Markdown。生成5条高命中、可选择是/否的中文断言。禁止开放问题、禁止性格套话、禁止疾病预测、禁止身体标记。",
-      },
-      {
-        role: "user",
-        content: [
-          "根据以下真实计算星盘数据生成验前事。",
-          "JSON格式：{\"items\":[{\"id\":1,\"area\":\"领域\",\"assertion\":\"一句可回答是/否的具体断言\",\"evidence\":\"简短推导\"}]}",
-          "优先级：父亲/家庭、学历、搬迁、经济、Dasha时间窗口、Ketu落宫。",
-          "chart:",
-          JSON.stringify(chart),
-        ].join("\n"),
-      },
-    ],
-    1800,
-  );
+  let content = "";
+  try {
+    content = await deepseekChat(
+      env,
+      [
+        {
+          role: "system",
+          content:
+            "你是吠陀占星验前事生成器。只输出JSON，不要Markdown。生成5条高命中、可选择是/否的中文断言。禁止开放问题、禁止性格套话、禁止疾病预测、禁止身体标记。",
+        },
+        {
+          role: "user",
+          content: [
+            "根据以下真实计算星盘摘要生成验前事。",
+            "JSON格式：{\"items\":[{\"id\":1,\"area\":\"领域\",\"assertion\":\"一句可回答是/否的具体断言\",\"evidence\":\"简短推导\"}]}",
+            "优先级：父亲/家庭、学历、搬迁、经济、Dasha时间窗口、Ketu落宫。",
+            "chart:",
+            JSON.stringify(compactValidationChart(chart)),
+          ].join("\n"),
+        },
+      ],
+      900,
+    );
+  } catch {
+    return fallbackValidationItems(chart);
+  }
   const parsed = tryParseJsonObject(content);
   const items = parsed?.items;
   if (!Array.isArray(items)) return fallbackValidationItems(chart);
